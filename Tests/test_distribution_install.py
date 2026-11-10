@@ -110,5 +110,48 @@ class DistributionInstallationTests(unittest.TestCase):
         self.assertEqual(entry['command'], str(runtime / 'python3'))
 
 
+    def test_claude_code_gets_a_working_user_scope_server_and_keeps_its_settings(self):
+        config = self.home / '.claude.json'
+        original = {'numStartups': 7, 'projects': {'/work': {'mcpServers': {'local': {'command': 'keep'}}}},
+                    'mcpServers': {'other': {'command': 'leave-this'}}}
+        installer.write_json(config, original)
+        result = installer.install(self.app, self.home, codex=False, chrome=False, claude_code=True)
+        self.assertTrue(result['claudeCode'])
+        saved = json.loads(config.read_text())
+        self.assertEqual(saved['numStartups'], 7)
+        self.assertEqual(saved['projects'], original['projects'])
+        self.assertEqual(saved['mcpServers']['other'], original['mcpServers']['other'])
+        entry = saved['mcpServers']['checker']
+        self.assertEqual(entry['type'], 'stdio')
+        self.assertEqual(json.loads((self.home / '.claude.json.checker-backup').read_text()), original)
+        # The registered command must answer an MCP handshake and list Checker's tools.
+        messages = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-06-18'}},
+                    {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
+                    {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'}]
+        environment = dict(os.environ, HOME=str(self.home), CHECKER_DATA_DIR=str(self.home / 'isolated-data'), CHECKER_NO_LAUNCH='1')
+        process = subprocess.run([entry['command'], *entry['args']], input=''.join(json.dumps(m) + '\n' for m in messages),
+                                 env=environment, capture_output=True, text=True, check=True, timeout=30)
+        tools = [line for line in process.stdout.splitlines() if '"id": 2' in line or '"id":2' in line]
+        self.assertIn('add_checklist_item', tools[0])
+        installer.install(self.app, self.home, codex=False, chrome=False, claude_code=True)
+        self.assertEqual(json.loads(config.read_text())['mcpServers']['checker'], entry)
+
+    def test_claude_install_time_is_recorded_and_kept_when_other_connections_change(self):
+        first = installer.install(self.app, self.home, codex=False, chrome=False, claude=True)
+        self.assertIsInstance(first['claudeInstalledAt'], float)
+        # No ~/.claude.json yet: Claude Code registration must create it.
+        later = installer.install(self.app, self.home, codex=False, chrome=False, claude_code=True)
+        self.assertEqual(later['claudeInstalledAt'], first['claudeInstalledAt'])
+        self.assertIn('checker', json.loads((self.home / '.claude.json').read_text())['mcpServers'])
+
+    def test_unknown_claude_code_connection_is_preserved(self):
+        config = self.home / '.claude.json'
+        original = {'mcpServers': {'checker': {'command': 'someone-else', 'args': ['other.py']}}}
+        installer.write_json(config, original)
+        with self.assertRaises(ValueError):
+            installer.install(self.app, self.home, codex=False, chrome=False, claude_code=True)
+        self.assertEqual(json.loads(config.read_text()), original)
+        self.assertFalse((self.home / 'Library/Application Support/Checker/runtime').exists())
+
 if __name__ == '__main__':
     unittest.main()

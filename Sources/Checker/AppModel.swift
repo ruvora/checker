@@ -16,7 +16,8 @@ import CheckerCore
     @Published var errorMessage: String?
     @Published var fatalError: String?
     @Published var toast: String?
-    var undoItem: ChecklistItem?
+    enum UndoAction { case replace(ChecklistItem), reinsert([ChecklistItem]), category(ChecklistRepository.RemovedCategory) }
+    var undoAction: UndoAction?
     var onPin: ((Bool) -> Void)?
     var onCollapse: (() -> Void)?
     var onLanguageChange: (() -> Void)?
@@ -47,7 +48,7 @@ import CheckerCore
     }
     private func applyLanguage(_ value: AppLanguage) {
         guard language != value else { return }
-        language = value; toast = nil; undoItem = nil; onLanguageChange?()
+        language = value; toast = nil; undoAction = nil; onLanguageChange?()
     }
     func reloadLanguage() {
         if let value = try? languageSettings.load() { applyLanguage(value) }
@@ -65,7 +66,7 @@ import CheckerCore
 
     private func act(on item: ChecklistItem, message: String, _ action: (ChecklistRepository) throws -> Void) {
         guard let repository else { return }
-        do { try action(repository); document = repository.document; undoItem = item; announce(message) }
+        do { try action(repository); document = repository.document; undoAction = .replace(item); announce(message) }
         catch { errorMessage = error.localizedDescription }
     }
     func archive(_ item: ChecklistItem) { act(on: item, message: "보관함으로 옮겼어요") { try $0.archive(item.id) } }
@@ -73,14 +74,39 @@ import CheckerCore
     func changeCategory(_ item: ChecklistItem, to id: String) {
         act(on: item, message: text("카테고리를 ‘{name}’로 바꿨어요", ["name": categoryName(id)])) { try $0.setCategory(item.id, categoryID: id) }
     }
+    func delete(_ items: [ChecklistItem]) {
+        guard let repository, !items.isEmpty else { return }
+        do {
+            let removed = try repository.delete(items.map(\.id))
+            document = repository.document; undoAction = .reinsert(removed)
+            announce(removed.count == 1 ? text("삭제했어요") : text("항목 {count}개를 삭제했어요", ["count": String(removed.count)]))
+        } catch { errorMessage = error.localizedDescription }
+    }
+    func deleteCategory(_ id: String) {
+        guard let repository else { return }
+        do {
+            let removed = try repository.deleteCategory(id)
+            document = repository.document
+            if categoryID == id { categoryID = nil }
+            undoAction = .category(removed)
+            announce(text("‘{name}’ 카테고리를 삭제했어요", ["name": removed.category.displayName(in: language)]))
+        } catch { errorMessage = error.localizedDescription }
+    }
+    func emptyArchive() { delete(document.items.filter(\.isArchived)) }
     func undo() {
-        guard let item = undoItem, let repository else { return }
-        do { try repository.replace(item); document = repository.document; undoItem = nil; toast = nil }
-        catch { errorMessage = error.localizedDescription }
+        guard let action = undoAction, let repository else { return }
+        do {
+            switch action {
+            case .replace(let item): try repository.replace(item)
+            case .reinsert(let items): try repository.reinsert(items)
+            case .category(let removed): try repository.restoreCategory(removed)
+            }
+            document = repository.document; undoAction = nil; toast = nil
+        } catch { errorMessage = error.localizedDescription }
     }
     func add(_ request: CaptureRequest) throws {
         guard let repository else { throw CheckerError.invalid("저장소를 열 수 없어요.") }
-        _ = try repository.add(request); document = repository.document; undoItem = nil; announce("할 일을 추가했어요")
+        _ = try repository.add(request); document = repository.document; undoAction = nil; announce("할 일을 추가했어요")
     }
     func addCategory(_ name: String) throws {
         guard let repository else { throw CheckerError.invalid("저장소를 열 수 없어요.") }
@@ -106,7 +132,7 @@ import CheckerCore
             if handled > 0 {
                 document = repository.document
                 let added = document.items.count - before
-                if added > 0 { undoItem = nil; announce(text("새 할 일 {count}개를 추가했어요", ["count": String(added)])) }
+                if added > 0 { undoAction = nil; announce(text("새 할 일 {count}개를 추가했어요", ["count": String(added)])) }
             }
         } catch {
             if errorMessage != error.localizedDescription { errorMessage = error.localizedDescription }
@@ -114,7 +140,7 @@ import CheckerCore
     }
     func announce(_ text: String) {
         toastWork?.cancel(); toast = self.text(text)
-        let work = DispatchWorkItem { [weak self] in self?.toast = nil; self?.undoItem = nil }
+        let work = DispatchWorkItem { [weak self] in self?.toast = nil; self?.undoAction = nil }
         toastWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + 7, execute: work)
     }
 }

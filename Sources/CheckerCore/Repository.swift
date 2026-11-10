@@ -64,6 +64,22 @@ public final class ChecklistRepository {
         try update(id) { $0.categoryID = categoryID; $0.updatedAt = Date() }
     }
     public func replace(_ item: ChecklistItem) throws { try update(item.id) { $0 = item } }
+    /// Permanently removes archived items. Active items must be archived first.
+    /// Receipts stay, so a client retrying the same requestID does not bring a deleted item back.
+    @discardableResult public func delete(_ ids: [String]) throws -> [ChecklistItem] {
+        let targets = Set(ids)
+        let removed = document.items.filter { targets.contains($0.id) }
+        guard removed.count == targets.count else { throw CheckerError.invalid("항목을 찾을 수 없어요.") }
+        guard removed.allSatisfy(\.isArchived) else { throw CheckerError.invalid("보관한 항목만 삭제할 수 있어요.") }
+        try commit { $0.items.removeAll { targets.contains($0.id) } }
+        return removed
+    }
+    /// Puts back items removed by `delete`, for undo. Items that already exist are left unchanged.
+    public func reinsert(_ items: [ChecklistItem]) throws {
+        try commit { doc in
+            for item in items where !doc.items.contains(where: { $0.id == item.id }) { doc.items.append(item) }
+        }
+    }
     private func update(_ id: String, change: (inout ChecklistItem) -> Void) throws {
         try commit { doc in
             guard let index = doc.items.firstIndex(where: { $0.id == id }) else { throw CheckerError.invalid("항목을 찾을 수 없어요.") }
@@ -78,6 +94,36 @@ public final class ChecklistRepository {
         try commit { $0.categories.insert(TaskCategory(id: "custom-" + UUID().uuidString.lowercased(), name: name), at: max(0, $0.categories.count - 1)) }
     }
 
+    /// A category removed by `deleteCategory`, with what is needed to put it back.
+    public struct RemovedCategory {
+        public let category: TaskCategory
+        public let index: Int
+        public let itemIDs: [String]
+    }
+    /// Deletes a category and moves its items (active and archived) to 미분류. 미분류 itself stays as the fallback.
+    @discardableResult public func deleteCategory(_ id: String, now: Date = Date()) throws -> RemovedCategory {
+        guard id != "uncategorized" else { throw CheckerError.invalid("미분류는 삭제할 수 없어요.") }
+        guard let index = document.categories.firstIndex(where: { $0.id == id }) else { throw CheckerError.invalid("카테고리를 찾을 수 없어요.") }
+        let removed = RemovedCategory(category: document.categories[index], index: index,
+                                      itemIDs: document.items.filter { $0.categoryID == id }.map(\.id))
+        try commit { doc in
+            doc.categories.remove(at: index)
+            for i in doc.items.indices where doc.items[i].categoryID == id { doc.items[i].categoryID = "uncategorized"; doc.items[i].updatedAt = now }
+        }
+        return removed
+    }
+    /// Undo for `deleteCategory`: restores the category in place and moves back items still in 미분류.
+    public func restoreCategory(_ removed: RemovedCategory) throws {
+        try commit { doc in
+            guard !doc.categories.contains(where: { $0.id == removed.category.id }) else { return }
+            doc.categories.insert(removed.category, at: min(removed.index, doc.categories.count))
+            let ids = Set(removed.itemIDs)
+            for i in doc.items.indices where ids.contains(doc.items[i].id) && doc.items[i].categoryID == "uncategorized" {
+                doc.items[i].categoryID = removed.category.id
+            }
+        }
+    }
+
     @discardableResult public func drainInbox() throws -> Int {
         let inbox = directory.appendingPathComponent("inbox")
         let files = try FileManager.default.contentsOfDirectory(at: inbox, includingPropertiesForKeys: nil).filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
@@ -89,6 +135,14 @@ public final class ChecklistRepository {
                 guard data.count <= 128 * 1024 else { throw CheckerError.invalid("등록 요청이 너무 커요.") }
                 let decoded = try decoder.decode(CaptureRequest.self, from: data)
                 request = decoded
+                let id = decoded.requestID.lowercased()
+                let receiptURL = directory.appendingPathComponent("receipts/\(id).json")
+                // A replay of a request whose item was deleted must not bring it back.
+                if !document.items.contains(where: { $0.id == id }),
+                   let saved = try? JSONSerialization.jsonObject(with: Data(contentsOf: receiptURL)) as? [String: Any], saved["status"] as? String == "added" {
+                    try FileManager.default.removeItem(at: file)
+                    continue
+                }
                 let item = try add(decoded)
                 let receipt: [String: Any] = ["status": "added", "id": item.id, "categoryID": item.categoryID]
                 try JSONSerialization.data(withJSONObject: receipt).write(to: directory.appendingPathComponent("receipts/\(item.id).json"), options: .atomic)

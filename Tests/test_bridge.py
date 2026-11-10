@@ -19,10 +19,11 @@ spec.loader.exec_module(bridge)
 class BridgeTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='checker-bridge-test-')
-        self.previous = {name: os.environ.get(name) for name in ['CHECKER_DATA_DIR', 'CHECKER_NO_LAUNCH', 'CODEX_THREAD_ID']}
+        self.previous = {name: os.environ.get(name) for name in ['CHECKER_DATA_DIR', 'CHECKER_NO_LAUNCH', 'CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID']}
         os.environ['CHECKER_DATA_DIR'] = self.temporary.name
         os.environ['CHECKER_NO_LAUNCH'] = '1'
         os.environ.pop('CODEX_THREAD_ID', None)
+        os.environ.pop('CLAUDE_CODE_SESSION_ID', None)
 
     def tearDown(self):
         for name, value in self.previous.items():
@@ -54,6 +55,19 @@ class BridgeTests(unittest.TestCase):
         result = bridge.capture({'title': '현재 대화 검토', 'sourceApp': 'codex'}, wait=0)
         saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
         self.assertEqual(saved['sourceURL'], 'codex://threads/' + thread_id)
+
+    def test_claude_code_session_is_kept_in_the_note_without_a_made_up_link(self):
+        session = str(uuid.uuid4())
+        os.environ['CLAUDE_CODE_SESSION_ID'] = session
+        result = bridge.capture({'title': '배포 확인', 'sourceApp': 'claude', 'note': '스테이징 확인'}, wait=0)
+        saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
+        self.assertIsNone(saved['sourceURL'])
+        self.assertTrue(saved['note'].startswith('스테이징 확인'))
+        self.assertIn('claude --resume ' + session, saved['note'])
+        os.environ['CLAUDE_CODE_SESSION_ID'] = 'not-a-session'
+        result = bridge.capture({'title': '배포 확인', 'sourceApp': 'claude'}, wait=0)
+        saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
+        self.assertEqual(saved['note'], '')
 
     def test_categories_come_from_the_app_including_custom_categories(self):
         custom = bridge.DEFAULT_CATEGORIES + [{'id': 'project-a', 'name': '프로젝트 A', 'description': 'A 프로젝트'}]

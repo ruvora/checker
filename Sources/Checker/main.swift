@@ -42,7 +42,10 @@ struct WindowPreferences: Codable {
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // .stationary keeps the panel in place while macOS animates a Space or full-screen switch,
+        // instead of hiding it and showing it again on the new Space (visible as a flicker).
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.animationBehavior = .none
         panel.minSize = NSSize(width: 300, height: 340)
         panel.maxSize = NSSize(width: 900, height: 1000)
         panel.contentView = CheckerHostingView(rootView: ChecklistView(model: model).ignoresSafeArea())
@@ -94,12 +97,14 @@ struct WindowPreferences: Codable {
             mainFrame = panel.frame
             model.isCollapsed = true
             panel.minSize = NSSize(width: 190, height: 68)
-            panel.setFrame(NSRect(x: mainFrame.maxX - 220, y: mainFrame.minY, width: 220, height: 72), display: true)
+            // Keep the top-right corner fixed so the window folds upward into the badge.
+            panel.setFrame(NSRect(x: mainFrame.maxX - 220, y: mainFrame.maxY - 72, width: 220, height: 72), display: true)
         } else {
-            let right = panel.frame.maxX, bottom = panel.frame.minY
+            let right = panel.frame.maxX, top = panel.frame.maxY
             model.isCollapsed = false
             panel.minSize = NSSize(width: 300, height: 340)
-            mainFrame.origin = CGPoint(x: right - mainFrame.width, y: bottom)
+            mainFrame.origin = CGPoint(x: right - mainFrame.width, y: top - mainFrame.height)
+            if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame, mainFrame.minY < visible.minY { mainFrame.origin.y = visible.minY }
             panel.setFrame(mainFrame, display: true)
         }
         changingFrame = false; saveGeometry()
