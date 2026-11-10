@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Checker — 나중에 챙길 일"
+  },
+  "extensionDescription": {
+    "message": "현재 화면을 AI가 읽고 할 일·메모·카테고리를 만들어 Checker에 추가합니다."
+  },
+  "actionTitle": {
+    "message": "Checker에 추가"
+  }
+}

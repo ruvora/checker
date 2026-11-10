@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Checker — Follow up later"
+  },
+  "extensionDescription": {
+    "message": "AI reads the current page and adds a task, note, and category to Checker."
+  },
+  "actionTitle": {
+    "message": "Add to Checker"
+  }
+}

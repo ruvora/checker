@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checker 설치 안내</title>
+<style>
+body{font:16px/1.8 -apple-system,BlinkMacSystemFont,sans-serif;background:#fbfaf7;color:#252b23;max-width:760px;margin:64px auto;padding:0 28px}h1{font-size:38px;margin-bottom:8px}h2{font-size:21px;margin-top:36px}p,li{color:#50584b}li{margin:12px 0}a{color:#537148}code{background:#eaf0e3;border-radius:5px;padding:3px 7px}small{color:#72766b}.pill{display:inline-block;border-radius:20px;padding:4px 14px;background:#eaf0e3;color:#537148}
+</style>
+<a href="Installation Guide.html">English</a>
+<p><span class="pill">나중에 챙길 일, 한곳에</span></p>
+<h1>Checker 설치하기</h1>
+<p>macOS 13 이상 · Apple Silicon(M1 이상) · 버전 {{VERSION}}</p>
+<ol>
+<li>열린 설치 이미지에서 <strong>Checker를 Applications(응용 프로그램) 폴더로 드래그</strong>합니다. 기존 Checker를 업데이트할 때는 앱을 종료하고 교체하세요.</li>
+<li>응용 프로그램 폴더의 Checker를 엽니다. 처음 나타나는 <strong>연결 설정</strong>에서 사용할 도구를 선택하고 ‘선택한 연결 설치’를 누릅니다.</li>
+<li><strong>Chrome</strong>: <code>chrome://extensions</code>에서 개발자 모드를 켜고 ‘압축해제된 확장 프로그램을 로드합니다’를 누릅니다. Checker 연결 설정의 ‘폴더 경로 복사’로 가져온 폴더를 선택하세요. 이미 이 폴더의 확장을 설치했다면 새로고침하면 됩니다. 예전 바탕화면 프로젝트 폴더의 확장을 쓰고 있었다면 해당 확장을 제거한 뒤 새 폴더로 추가하세요.</li>
+<li><strong>Claude 데스크톱</strong>: 앱을 완전히 종료하고 다시 열어 <code>checker</code> 도구를 켭니다. <strong>Codex</strong>: 새 대화에서 <code>$checker-capture</code>를 사용합니다.</li>
+</ol>
+<p>연결 설정은 Checker 위쪽 톱니바퀴 또는 메뉴 막대의 ‘연결 설정…’에서 다시 열 수 있습니다. 설치 후 디스크 이미지는 추출해도 됩니다.</p>
+<h2>언어 선택</h2>
+<p>한국어와 영어를 지원합니다. 처음에는 기기 언어를 따르며 지원하지 않는 언어에서는 영어를 사용합니다. 앱의 연결 설정 또는 Chrome 팝업 아래에서 언어를 바꿀 수 있습니다. 앱·확장·새 AI 제목과 메모에 함께 적용되며, 기존 제목·메모·직접 만든 카테고리는 바꾸지 않습니다.</p>
+<h2>Chrome에서 한 번 눌러 추가</h2>
+<p>원하는 페이지에서 Checker 확장을 열고 ‘추가하기’를 누르면 AI가 화면과 본문을 읽어 제목·메모·카테고리를 정합니다. 팝업을 닫아도 작업은 계속됩니다. 체크리스트 제목을 누르면 원래 페이지로 돌아갑니다.</p>
+<p>AI 분석에는 <strong>Codex 앱 설치와 로그인</strong>이 필요하고 해당 계정의 사용 한도를 사용합니다. 화면 이미지와 페이지 내용을 Codex에 보내 분석하며 분석용 임시 파일은 처리 후 삭제합니다. 체크리스트는 이 Mac에 저장합니다. Python이나 개발 도구를 따로 설치할 필요는 없습니다.</p>
+<h2>테스트 배포판 안내</h2>
+<p>{{SIGNING_NOTICE}}</p>
+<p>보안 경고로 열리지 않으면 본인이 받은 Checker 파일인지 확인한 뒤 <a href="https://support.apple.com/en-us/102445">Apple의 앱 열기 안내</a>를 따라 시스템 설정 → 개인정보 보호 및 보안에서 해당 앱의 ‘확인 없이 열기’를 선택할 수 있습니다.</p>
+<h2>업데이트와 데이터</h2>
+<p>업데이트는 Checker를 종료한 뒤 응용 프로그램 폴더의 앱을 교체하고 다시 실행합니다. 연결 설정에서 설치를 갱신하고 Chrome 확장을 새로고침하세요. 기존 항목·보관함·카테고리는 <code>~/Library/Application Support/Checker</code>에 유지됩니다.</p>
+<p><small>이 설치 파일에는 개인 체크리스트·대화·Codex 로그인 정보가 포함되지 않습니다. Intel Mac과 Windows는 이 배포판의 지원 대상이 아닙니다.</small></p>
+</html>

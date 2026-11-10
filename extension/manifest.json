@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extensionName__",
+  "version": "0.3.0",
+  "description": "__MSG_extensionDescription__",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "contextMenus",
+    "nativeMessaging",
+    "storage",
+    "alarms"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "__MSG_actionTitle__",
+    "default_popup": "popup.html"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1Cu44wdhXkpxCabNt+GJ3YAbINscZqHjHEilPftSlCEl5RAUndHKp2S03FhORYTym1tQg0deOx4xT3MXbIUYTsr65a61chnJ5oBZO99YkMjnNqlsQswZ8gCDC5pPFCojWJ3bF5YkyJFCJf2xrqRkbdBgqMdTqtw+9wdzcvfwEDrWY/YQCEt0XKRWpRlMwFUNe5O1Oj2+JsHsXxGNZ9UdJvWMGKQZ6E8EXXv3D7oauQe4SuQ/efUZABlMgUpvCisxnPz3pr929AjZYqR85Qp49Zsj865IUvcIWHCHQBjLR8PwpgiILt2Q8uxPKWF5FJqtcjXzq5HrvqWyCXjKw4V/jwIDAQAB",
+  "default_locale": "en"
+}

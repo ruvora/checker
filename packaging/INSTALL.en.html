@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install Checker</title>
+<style>
+body{font:16px/1.8 -apple-system,BlinkMacSystemFont,sans-serif;background:#fbfaf7;color:#252b23;max-width:760px;margin:64px auto;padding:0 28px}h1{font-size:38px;margin-bottom:8px}h2{font-size:21px;margin-top:36px}p,li{color:#50584b}li{margin:12px 0}a{color:#537148}code{background:#eaf0e3;border-radius:5px;padding:3px 7px}small{color:#72766b}.pill{display:inline-block;border-radius:20px;padding:4px 14px;background:#eaf0e3;color:#537148}
+</style>
+<a href="설치 안내.html">한국어</a>
+<p><span class="pill">Follow up later, in one place</span></p>
+<h1>Install Checker</h1>
+<p>macOS 13 or later · Apple Silicon (M1 or later) · Version {{VERSION}}</p>
+<ol>
+<li>Open the disk image and <strong>drag Checker to Applications</strong>. Quit the existing Checker app before replacing it during an update.</li>
+<li>Open Checker from Applications. In <strong>Settings &amp; connections</strong>, select the tools you use and click <strong>Install selected connections</strong>.</li>
+<li><strong>Chrome:</strong> open <code>chrome://extensions</code>, enable Developer mode, and choose Load unpacked. Use Copy folder path in Checker to find the extension folder. If it is already installed from this folder, reload it. If your old extension was loaded from a Desktop project, remove that extension and load the new folder instead.</li>
+<li><strong>Claude Desktop:</strong> quit and reopen Claude, then enable the <code>checker</code> tools. <strong>Codex:</strong> use <code>$checker-capture</code> in a new chat.</li>
+</ol>
+<p>Reopen settings with the gear button at the top of Checker or Settings &amp; connections in its menu bar menu. You can eject the disk image after installation.</p>
+<h2>Choose your language</h2>
+<p>Checker supports <strong>English and Korean</strong>. It initially follows your system language, with English as the fallback. Choose a language in Checker settings or at the bottom of the Chrome popup. The setting is shared across the app and extension, and controls new AI-generated titles and notes. Existing tasks, notes, and custom category names stay as you wrote them.</p>
+<h2>Add any page with one click</h2>
+<p>Open the Checker extension on the page you want to keep and click Add to Checker. AI reads the page image and text, then generates a task title, note, and category. Analysis continues if you close the popup. Click a saved task title to return to the original page.</p>
+<p>AI analysis requires the <strong>Codex app and a signed-in account</strong>, and uses that account’s usage limits. The page image and text are sent to Codex for analysis. Temporary analysis inputs are deleted afterward; your checklist stays on your Mac. Python and developer tools are included or unnecessary for installation.</p>
+<h2>Distribution status</h2>
+<p>{{SIGNING_NOTICE}}</p>
+<p>If macOS blocks the first launch, confirm that the file is the Checker app you intended to install and follow <a href="https://support.apple.com/en-us/102445">Apple’s instructions for safely opening apps</a> in System Settings → Privacy &amp; Security.</p>
+<h2>Updates and your data</h2>
+<p>Quit Checker, replace the app in Applications, and reopen it. Install the connections again from settings and reload the Chrome extension. Tasks, archived items, categories, and language preferences remain in <code>~/Library/Application Support/Checker</code>.</p>
+<p><small>This installer contains no personal checklist, chat history, or Codex login credentials. This distribution does not support Intel Macs or Windows.</small></p>
+</html>

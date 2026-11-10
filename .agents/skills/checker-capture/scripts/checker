@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+CHECKER_SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+CHECKER_RUNTIME_DIR=$(CDPATH= cd -- "$CHECKER_SCRIPT_DIR/../../.." && pwd -P)
+if [ -x "$CHECKER_RUNTIME_DIR/python3" ] && [ -f "$CHECKER_RUNTIME_DIR/checker_bridge.py" ]; then
+    exec "$CHECKER_RUNTIME_DIR/python3" "$CHECKER_RUNTIME_DIR/checker_bridge.py" "$@"
+fi
+exec python3 "$CHECKER_SCRIPT_DIR/checker.py" "$@"
