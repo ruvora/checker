@@ -42,7 +42,18 @@ struct FlowLayout: Layout {
 
 struct DragArea: NSViewRepresentable {
     final class DragView: NSView {
-        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+        private var dragStart: (mouse: NSPoint, origin: NSPoint)?
+        // A sheet cannot move by itself, so dragging inside one moves its parent window (the sheet follows).
+        override func mouseDown(with event: NSEvent) {
+            guard let parent = window?.sheetParent else { window?.performDrag(with: event); return }
+            dragStart = (NSEvent.mouseLocation, parent.frame.origin)
+        }
+        override func mouseDragged(with event: NSEvent) {
+            guard let start = dragStart, let parent = window?.sheetParent else { return }
+            let mouse = NSEvent.mouseLocation
+            parent.setFrameOrigin(NSPoint(x: start.origin.x + mouse.x - start.mouse.x, y: start.origin.y + mouse.y - start.mouse.y))
+        }
+        override func mouseUp(with event: NSEvent) { dragStart = nil }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
     func makeNSView(context: Context) -> NSView { DragView() }
@@ -51,6 +62,8 @@ struct DragArea: NSViewRepresentable {
 
 struct ChecklistView: View {
     @ObservedObject var model: AppModel
+    @State private var confirmEmpty = false
+    @State private var categoryToDelete: TaskCategory?
     var body: some View {
         Group {
             if model.isCollapsed { compact }
@@ -60,6 +73,14 @@ struct ChecklistView: View {
         .background(Palette.background)
         .tint(Palette.accent)
         .environment(\.locale, model.language.locale)
+        .confirmationDialog(model.text("‘{name}’ 카테고리를 삭제할까요?", ["name": categoryToDelete?.displayName(in: model.language) ?? ""]),
+                            isPresented: Binding(get: { categoryToDelete != nil }, set: { if !$0 { categoryToDelete = nil } })) {
+            Button(model.text("카테고리 삭제"), role: .destructive) { if let category = categoryToDelete { model.deleteCategory(category.id) }; categoryToDelete = nil }
+            Button(model.text("취소"), role: .cancel) { categoryToDelete = nil }
+        } message: {
+            let count = model.document.items.filter { $0.categoryID == categoryToDelete?.id }.count
+            Text(count > 0 ? model.text("이 카테고리의 항목 {count}개는 미분류로 옮겨요. 항목은 지워지지 않아요.", ["count": String(count)]) : model.text("이 카테고리에는 항목이 없어요."))
+        }
         .sheet(isPresented: $model.showAdd) { AddItemView(model: model) }
         .sheet(isPresented: $model.showCategoryEditor) { AddCategoryView(model: model) }
         .sheet(isPresented: $model.showConnections) { ConnectionsView(model: model) }
@@ -88,11 +109,13 @@ struct ChecklistView: View {
     private var full: some View {
         VStack(spacing: 0) {
             header
-            HStack(spacing: 6) {
+            // Buttons keep their full size; when the window is narrow the row wraps onto a second line.
+            FlowLayout(spacing: 6) {
                 scopeButton(model.text("할 일"), symbol: "checklist", count: model.activeCount, archived: false)
                 scopeButton(model.text("보관함"), symbol: "archivebox", count: model.archiveCount, archived: true)
-                Spacer()
-            }.padding(.horizontal, 17).padding(.bottom, 12)
+                appButton(name: "Codex", bundleID: "com.openai.codex")
+                appButton(name: "Claude", bundleID: "com.anthropic.claudefordesktop")
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 17).padding(.bottom, 12)
             FlowLayout {
                 categoryButton(model.text("전체"), id: nil)
                 ForEach(model.document.categories) { category in categoryButton(category.displayName(in: model.language), id: category.id) }
@@ -111,7 +134,7 @@ struct ChecklistView: View {
                 HStack(spacing: 8) {
                     Text(toast).font(.system(size: 11)).lineLimit(2)
                     Spacer(minLength: 5)
-                    if model.undoItem != nil { Button(model.text("되돌리기")) { model.undo() }.buttonStyle(.plain).font(.system(size: 11)).underline() }
+                    if model.undoAction != nil { Button(model.text("되돌리기")) { model.undo() }.buttonStyle(.plain).font(.system(size: 11)).underline() }
                 }.padding(.horizontal, 17).padding(.vertical, 9).background(Palette.selected)
             }
             footer
@@ -139,6 +162,20 @@ struct ChecklistView: View {
                 .background(model.showArchived == archived ? Palette.selected : .clear).clipShape(RoundedRectangle(cornerRadius: 9))
         }.buttonStyle(.plain).accessibilityLabel("\(title) \(count)").accessibilityAddTraits(model.showArchived == archived ? .isSelected : [])
     }
+    /// Opens a companion app. Hidden when the app is not installed.
+    /// Styled like the unselected scope tabs. The installed app's own icon is shown in grayscale to match the muted text.
+    @ViewBuilder private func appButton(name: String, bundleID: String) -> some View {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            Button { NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, _ in } } label: {
+                HStack(spacing: 5) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 15, height: 15).saturation(0).opacity(0.8)
+                    Text(name)
+                }
+                    .font(.system(size: 12, weight: .medium)).padding(.horizontal, 8).padding(.vertical, 8)
+                    .foregroundColor(Palette.muted).contentShape(Rectangle())
+            }.buttonStyle(.plain).help(model.text("{name} 열기", ["name": name])).accessibilityLabel(model.text("{name} 열기", ["name": name]))
+        }
+    }
     private func categoryButton(_ name: String, id: String?) -> some View {
         let count = model.categoryCount(id)
         return Button { model.categoryID = id } label: {
@@ -147,6 +184,11 @@ struct ChecklistView: View {
                 .foregroundColor(model.categoryID == id ? .primary : Palette.muted)
                 .background(model.categoryID == id ? Palette.soft : .clear).clipShape(RoundedRectangle(cornerRadius: 6))
         }.buttonStyle(.plain).accessibilityLabel(model.text("카테고리 {name}", ["name": name])).accessibilityAddTraits(model.categoryID == id ? .isSelected : [])
+        .contextMenu {
+            if let id, id != "uncategorized", let category = model.document.categories.first(where: { $0.id == id }) {
+                Button(model.text("카테고리 삭제…"), role: .destructive) { categoryToDelete = category }
+            }
+        }
     }
     private func itemRow(_ item: ChecklistItem) -> some View {
         VStack(spacing: 0) {
@@ -172,12 +214,17 @@ struct ChecklistView: View {
                     if let date = item.archivedAt { Text(date, style: .relative).font(.system(size: 10)).foregroundColor(Palette.muted) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 if model.showArchived {
-                    Button { model.restore(item) } label: { Label(model.text("복구"), systemImage: "arrow.uturn.backward").font(.system(size: 10)) }.buttonStyle(.bordered).controlSize(.small).accessibilityLabel(model.text("{title} 복구", ["title": item.title]))
+                    HStack(spacing: 4) {
+                        Button { model.restore(item) } label: { Label(model.text("복구"), systemImage: "arrow.uturn.backward").font(.system(size: 10)) }.buttonStyle(.bordered).controlSize(.small).accessibilityLabel(model.text("{title} 복구", ["title": item.title]))
+                        Button { model.delete([item]) } label: { Image(systemName: "trash").font(.system(size: 10)).frame(width: 22, height: 22).contentShape(Rectangle()) }
+                            .buttonStyle(.plain).foregroundColor(Palette.muted).help(model.text("완전히 삭제")).accessibilityLabel(model.text("{title} 완전히 삭제", ["title": item.title]))
+                    }
                 }
             }.padding(.vertical, 17)
             .contextMenu {
                 if !item.note.isEmpty { Button(model.text("메모 보기")) { model.noteItem = item } }
                 if let link = item.sourceURL { Button(model.text("원문 링크 복사")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(link, forType: .string) } }
+                if item.isArchived { Divider(); Button(model.text("완전히 삭제"), role: .destructive) { model.delete([item]) } }
             }
         }
     }
@@ -192,7 +239,15 @@ struct ChecklistView: View {
         HStack {
             Button { model.showAdd = true } label: { Label(model.text("할 일 추가"), systemImage: "plus").font(.system(size: 11)) }.buttonStyle(.plain).disabled(model.fatalError != nil)
             Spacer()
-            Text(model.showArchived ? model.text("언제든 복구할 수 있어요") : model.text("체크하면 보관함으로")).font(.system(size: 10)).foregroundColor(Palette.muted)
+            if model.showArchived && model.archiveCount > 0 {
+                Button { confirmEmpty = true } label: { Label(model.text("보관함 비우기"), systemImage: "trash").font(.system(size: 11)) }.buttonStyle(.plain).foregroundColor(Palette.muted)
+                    .confirmationDialog(model.text("보관함의 항목 {count}개를 완전히 삭제할까요?", ["count": String(model.archiveCount)]), isPresented: $confirmEmpty) {
+                        Button(model.text("완전히 삭제"), role: .destructive) { model.emptyArchive() }
+                        Button(model.text("취소"), role: .cancel) {}
+                    } message: { Text(model.text("삭제한 직후 ‘되돌리기’로만 복구할 수 있어요.")) }
+            } else {
+                Text(model.showArchived ? model.text("언제든 복구할 수 있어요") : model.text("체크하면 보관함으로")).font(.system(size: 10)).foregroundColor(Palette.muted)
+            }
             Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 9)).foregroundColor(Palette.muted).help(model.text("창 모서리를 드래그해 크기를 조절하세요")).allowsHitTesting(false)
         }.padding(.horizontal, 17).padding(.vertical, 13).background(Palette.soft)
     }

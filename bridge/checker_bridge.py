@@ -176,6 +176,14 @@ def capture(payload, wait=3.0):
     note = payload.get("note") or ""
     if not isinstance(note, str) or len(note) > 8000:
         raise ValueError(tr("메모는 8,000자 이내로 적어 주세요."))
+    # Claude Code sessions have no openable link; keep the real session ID so it can be resumed.
+    if not link and source == "claude" and os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        try:
+            session = str(uuid.UUID(os.environ["CLAUDE_CODE_SESSION_ID"]))
+            reference = tr("Claude Code 세션: {id} (claude --resume {id})").replace("{id}", session)
+            note = (note.rstrip() + "\n\n" + reference).strip()[:8000]
+        except ValueError:
+            pass
     category = payload.get("categoryID") or "uncategorized"
     if category not in {item["id"] for item in categories()}:
         raise ValueError(tr("카테고리가 없어요. categories로 현재 목록을 먼저 확인해 주세요."))
@@ -479,6 +487,14 @@ def read_exact(stream, count):
 
 
 def native_host():
+    # Chrome only launches this host for the allowed extension, so this marks the
+    # extension as actually loaded. The app shows it in its connection status.
+    try:
+        marker = data_directory() / "chrome-last-seen"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except OSError:
+        pass
     while True:
         header = sys.stdin.buffer.read(4)
         if not header:

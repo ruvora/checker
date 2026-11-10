@@ -11,6 +11,7 @@ import shlex
 import shutil
 import sys
 import tempfile
+import time
 
 BUNDLE_ID = 'local.checker.prototype'
 
@@ -34,7 +35,7 @@ def read_json(path, default=None):
     return json.loads(path.read_text(encoding='utf-8')) if path.exists() else default
 
 
-def install(app, home, *, codex=True, chrome=True, claude=False, language=None):
+def install(app, home, *, codex=True, chrome=True, claude=False, claude_code=False, language=None):
     app = app.resolve()
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     if info.get('CFBundleIdentifier') != BUNDLE_ID:
@@ -57,6 +58,9 @@ def install(app, home, *, codex=True, chrome=True, claude=False, language=None):
     skill = home / '.codex/skills/checker-capture'
     target = runtime / 'skills/checker-capture'
     claude_file = home / 'Library/Application Support/Claude/claude_desktop_config.json'
+    # Claude Code keeps user-scope MCP servers in ~/.claude.json (all projects).
+    claude_code_file = home / '.claude.json'
+    mcp_args = [str(runtime / 'checker_bridge.py'), 'mcp']
     # Check every selected destination before making changes. Unknown connectors
     # or custom skills are not silently replaced by an installer.
     if chrome and host_file.exists():
@@ -71,8 +75,14 @@ def install(app, home, *, codex=True, chrome=True, claude=False, language=None):
         raise ValueError('Claude 설정 파일 형식을 확인해 주세요. 기존 설정은 변경하지 않았습니다.')
     servers = existing.get('mcpServers', {})
     old_checker = servers.get('checker', {})
-    if claude and 'checker' in servers and (not isinstance(old_checker, dict) or old_checker.get('args') != [str(runtime / 'checker_bridge.py'), 'mcp']):
+    if claude and 'checker' in servers and (not isinstance(old_checker, dict) or old_checker.get('args') != mcp_args):
         raise ValueError('다른 Claude checker 연결이 있어 보존했습니다. 기존 연결을 확인해 주세요.')
+    code_config = read_json(claude_code_file, {}) if claude_code else {}
+    if not isinstance(code_config, dict) or (claude_code and not isinstance(code_config.get('mcpServers', {}), dict)):
+        raise ValueError('Claude Code 설정 파일 형식을 확인해 주세요. 기존 설정은 변경하지 않았습니다.')
+    code_checker = code_config.get('mcpServers', {}).get('checker', {})
+    if claude_code and 'checker' in code_config.get('mcpServers', {}) and (not isinstance(code_checker, dict) or code_checker.get('args') != mcp_args):
+        raise ValueError('다른 Claude Code checker 연결이 있어 보존했습니다. 기존 연결을 확인해 주세요.')
     manifest = read_json(payload / 'extension/manifest.json')
     digest = hashlib.sha256(base64.b64decode(manifest['key'], validate=True)).hexdigest()[:32]
     extension_id = ''.join(chr(ord('a') + int(value, 16)) for value in digest)
@@ -108,12 +118,28 @@ def install(app, home, *, codex=True, chrome=True, claude=False, language=None):
                 backup.write_bytes(claude_file.read_bytes())
                 backup.chmod(0o600)
         existing.setdefault('mcpServers', {})['checker'] = {
-            **old_checker, 'command': str(interpreter), 'args': [str(runtime / 'checker_bridge.py'), 'mcp']}
+            **old_checker, 'command': str(interpreter), 'args': mcp_args}
         write_json(claude_file, existing)
+    if claude_code:
+        if claude_code_file.exists():
+            backup = home / '.claude.json.checker-backup'
+            if not backup.exists():
+                backup.write_bytes(claude_code_file.read_bytes())
+                backup.chmod(0o600)
+        # Re-read right before writing: running Claude Code sessions update this file often.
+        code_config = read_json(claude_code_file, {})
+        code_servers = code_config.setdefault('mcpServers', {})
+        code_servers['checker'] = {**code_servers.get('checker', {}), 'type': 'stdio', 'command': str(interpreter), 'args': mcp_args}
+        write_json(claude_code_file, code_config)
     previous = read_json(runtime / 'connections.json', {})
-    connected = {name: selected or previous.get(name, False) for name, selected in [('codex', codex), ('chrome', chrome), ('claude', claude)]}
+    connected = {name: selected or previous.get(name, False) for name, selected in [('codex', codex), ('chrome', chrome), ('claude', claude), ('claudeCode', claude_code)]}
     result = {'status': 'ok', 'appPath': str(app), 'version': info['CFBundleShortVersionString'],
               'extensionID': extension_id, 'extensionFolder': str(runtime / 'extension'), **connected}
+    # Claude desktop rewrites its own config while running, so the config's modification time
+    # cannot tell whether Claude has loaded Checker. The app compares this time with Claude's launch.
+    installed_at = time.time() if claude else previous.get('claudeInstalledAt')
+    if installed_at is not None:
+        result['claudeInstalledAt'] = installed_at
     write_json(runtime / 'connections.json', result)
     return result
 
@@ -125,10 +151,11 @@ def main():
     parser.add_argument('--codex', action='store_true')
     parser.add_argument('--chrome', action='store_true')
     parser.add_argument('--claude', action='store_true')
+    parser.add_argument('--claude-code', action='store_true')
     parser.add_argument('--language', choices=['en', 'ko'])
     args = parser.parse_args()
     try:
-        print(json.dumps(install(args.app_bundle, Path.home(), codex=args.codex, chrome=args.chrome, claude=args.claude, language=args.language), ensure_ascii=False))
+        print(json.dumps(install(args.app_bundle, Path.home(), codex=args.codex, chrome=args.chrome, claude=args.claude, claude_code=args.claude_code, language=args.language), ensure_ascii=False))
     except (ValueError, KeyError, OSError) as error:
         message = str(error)
         catalog = args.app_bundle / 'Contents/Resources/capture/strings.json'

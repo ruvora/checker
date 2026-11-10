@@ -30,6 +30,29 @@ do {
         _ = try repo.add(request)
         try expect(repo.document.items.count == 1 && repo.document.items[0].isArchived, "duplicate capture changed the item")
     }
+    try check("only archived items are deleted, undo puts them back, and replays stay deleted") { directory in
+        let repo = try ChecklistRepository(directory: directory)
+        let active = try repo.add(CaptureRequest(title: "진행 중"))
+        let request = CaptureRequest(title: "끝난 일", sourceURL: "https://example.com/done", categoryID: "review")
+        let file = directory.appendingPathComponent("inbox/\(request.requestID).json")
+        let data = try JSONEncoder().encode(request)
+        try data.write(to: file, options: .atomic)
+        _ = try repo.drainInbox()
+        let done = repo.document.items.first { $0.title == "끝난 일" }!
+        do { try repo.delete([active.id]); throw CheckerError.invalid("active item deleted") }
+        catch CheckerError.invalid(let message) where message != "active item deleted" {}
+        try repo.archive(done.id)
+        let removed = try repo.delete([done.id])
+        let reloaded = try ChecklistRepository(directory: directory)
+        try expect(reloaded.document.items.map(\.id) == [active.id], "delete was not persisted")
+        try repo.reinsert(removed)
+        let back = try ChecklistRepository(directory: directory).document.items.first { $0.id == done.id }
+        try expect(back?.sourceURL == "https://example.com/done" && back?.categoryID == "review" && back?.isArchived == true, "undo lost item metadata")
+        try repo.delete([done.id])
+        try data.write(to: file, options: .atomic)
+        _ = try repo.drainInbox()
+        try expect(repo.document.items.count == 1 && !FileManager.default.fileExists(atPath: file.path), "replayed request restored a deleted item")
+    }
     try check("invalid links cannot mutate persisted data") { directory in
         let repo = try ChecklistRepository(directory: directory)
         for link in ["javascript:alert(1)", "codex://plugins/install/example", "file:///etc/passwd"] {
@@ -70,6 +93,27 @@ do {
         try repo.replace(original)
         let saved = try ChecklistRepository(directory: directory)
         try expect(saved.document.items[0].categoryID == "review", "undo not persisted")
+    }
+    try check("deleting a category moves its items to 미분류 and undo restores both") { directory in
+        let repo = try ChecklistRepository(directory: directory)
+        try repo.addCategory(name: "프로젝트 B")
+        let category = repo.document.categories.first { $0.name == "프로젝트 B" }!
+        let position = repo.document.categories.firstIndex(of: category)!
+        let active = try repo.add(CaptureRequest(title: "진행 중", categoryID: category.id))
+        let archived = try repo.add(CaptureRequest(title: "끝남", categoryID: category.id))
+        let other = try repo.add(CaptureRequest(title: "다른 일", categoryID: "review"))
+        try repo.archive(archived.id)
+        do { try repo.deleteCategory("uncategorized"); throw CheckerError.invalid("fallback deleted") }
+        catch CheckerError.invalid(let message) where message != "fallback deleted" {}
+        let removed = try repo.deleteCategory(category.id)
+        let saved = try ChecklistRepository(directory: directory).document
+        try expect(!saved.categories.contains { $0.id == category.id }, "category not deleted")
+        try expect(saved.items.filter { $0.categoryID == "uncategorized" }.count == 2, "items not moved to 미분류")
+        try expect(saved.items.first { $0.id == other.id }?.categoryID == "review", "unrelated item changed")
+        try repo.restoreCategory(removed)
+        let restored = try ChecklistRepository(directory: directory).document
+        try expect(restored.categories.firstIndex(of: category) == position, "category not restored in place")
+        try expect([active.id, archived.id].allSatisfy { id in restored.items.first { $0.id == id }?.categoryID == category.id }, "items not moved back")
     }
     try check("language preferences persist without rewriting task data or custom categories") { directory in
         let repo = try ChecklistRepository(directory: directory)

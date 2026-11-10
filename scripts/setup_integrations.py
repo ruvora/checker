@@ -54,6 +54,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--install', action='store_true', help='Install the Codex skill link and Chrome Native Messaging host for this user')
     parser.add_argument('--claude', action='store_true', help='Merge the Checker local MCP entry into Claude Desktop config')
+    parser.add_argument('--claude-code', action='store_true', help='Register the Checker MCP server for Claude Code (user scope, ~/.claude.json)')
     args = parser.parse_args()
     manifest_file = ROOT / 'extension/manifest.json'
     manifest = json.loads(manifest_file.read_text())
@@ -69,7 +70,7 @@ def main():
     home = Path.home()
     runtime = home / 'Library/Application Support/Checker/runtime'
     installed_app = home / 'Applications/Checker.app'
-    if args.install or args.claude:
+    if args.install or args.claude or args.claude_code:
         runtime, installed_app = install_payload(home)
     native = {'name': 'local.checker.capture', 'description': 'Checker local checklist capture', 'path': str(runtime / 'native-host'), 'type': 'stdio', 'allowed_origins': ['chrome-extension://' + extension_id + '/']}
     mcp = {'command': '/usr/bin/python3', 'args': [str(runtime / 'checker_bridge.py'), 'mcp']}
@@ -103,7 +104,19 @@ def main():
                 backup.write_bytes(config.read_bytes())
         servers['checker'] = {**servers.get('checker', {}), **mcp}
         write_json(config, existing)
-    print(json.dumps({'extensionID': extension_id, 'extensionFolder': str(ROOT / 'extension'), 'app': str(installed_app), 'runtime': str(runtime), 'installed': args.install, 'claudeConfigured': args.claude}, ensure_ascii=False, indent=2))
+    if args.claude_code:
+        config = home / '.claude.json'
+        existing = json.loads(config.read_text()) if config.exists() else {}
+        servers = existing.setdefault('mcpServers', {})
+        if 'checker' in servers and servers['checker'].get('args') != mcp['args']:
+            raise RuntimeError('An existing Claude Code Checker connector was preserved.')
+        if config.exists():
+            backup = home / '.claude.json.checker-backup'
+            if not backup.exists():
+                backup.write_bytes(config.read_bytes())
+        servers['checker'] = {**servers.get('checker', {}), 'type': 'stdio', **mcp}
+        write_json(config, existing)
+    print(json.dumps({'extensionID': extension_id, 'extensionFolder': str(ROOT / 'extension'), 'app': str(installed_app), 'runtime': str(runtime), 'installed': args.install, 'claudeConfigured': args.claude, 'claudeCodeConfigured': args.claude_code}, ensure_ascii=False, indent=2))
 
 if __name__ == '__main__':
     try:
