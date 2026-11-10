@@ -20,7 +20,7 @@ AI가 끝낸 작업의 결과, 다시 읽어볼 PR, 문서에서 발견한 후�
 
 | 할 일을 한눈에 | 끝낸 일은 보관함으로 |
 | :---: | :---: |
-| <img src="docs/assets/checker-tasks.png" alt="Checker 할 일 화면: Chrome, Codex, Claude의 후속 작업을 카테고리와 함께 표시" width="440"> | <img src="docs/assets/checker-archive.png" alt="Checker 보관함 화면: 완료한 항목의 원문 링크와 카테고리를 유지하며 복구 가능" width="440"> |
+| <img src="docs/assets/checker-tasks.jpg" alt="Checker 할 일 화면: Chrome, Codex, Claude의 후속 작업을 카테고리와 함께 표시" width="440"> | <img src="docs/assets/checker-archive.jpg" alt="Checker 보관함 화면: 완료한 항목의 원문 링크와 카테고리를 유지하며 복구 가능" width="440"> |
 | 출처와 카테고리를 함께 보고, 제목으로 원문 열기 | 한 번 눌러 보관하고, 필요할 때 복구하기 |
 
 <p align="center"><sub>실제 앱 화면 · 촬영용 예시 데이터<br>화면과 기능 설명은 main 브랜치 기준으로, 배포된 설치 파일과 일부 차이가 있을 수 있습니다.</sub></p>
@@ -38,7 +38,7 @@ AI가 끝낸 작업의 결과, 다시 읽어볼 PR, 문서에서 발견한 후�
 | **English / 한국어** | 앱·확장·새 AI 결과의 언어를 함께 바꿉니다. 기존 제목·메모와 직접 만든 카테고리 이름은 유지합니다. |
 
 <p align="center">
-  <img src="docs/assets/checker-compact.png" alt="Checker를 접으면 남은 할 일 개수만 표시하는 작은 배지" width="220"><br>
+  <img src="docs/assets/checker-compact.jpg" alt="Checker를 접으면 남은 할 일 개수만 표시하는 작은 배지" width="220"><br>
   <sub>집중할 때는 이만큼만.</sub>
 </p>
 
