@@ -18,10 +18,22 @@
 
 AI가 끝낸 작업의 결과, 다시 읽어볼 PR, 문서에서 발견한 후속 작업. Checker는 여러 곳에서 생긴 일을 화면 위 작은 창에 모아둡니다. 작업을 마친 뒤 AI에게 추가를 요청하거나, Chrome에서 **추가하기**를 누르면 됩니다.
 
+| PR을 보면서 목록 확인 | 집중할 때는 작은 배지로 |
+| :---: | :---: |
+| <img src="docs/assets/checker-over-github.png" alt="Chrome의 GitHub PR 화면 위에 고정한 Checker 체크리스트" width="440"> | <img src="docs/assets/checker-compact-over-github.png" alt="같은 GitHub PR 화면 위에서 남은 할 일 3개를 표시하는 접힌 Checker 배지" width="440"> |
+| 다른 앱 위에 띄워두고, 다시 확인할 일 챙기기 | 목록을 접어두고 남은 개수만 보기 |
+
+이미지를 누르면 크게 볼 수 있습니다.
+
+<details>
+<summary>할 일 목록과 보관함 자세히 보기</summary>
+
 | 할 일을 한눈에 | 끝낸 일은 보관함으로 |
 | :---: | :---: |
 | <img src="docs/assets/checker-tasks.jpg" alt="Checker 할 일 화면: Chrome, Codex, Claude의 후속 작업을 카테고리와 함께 표시" width="440"> | <img src="docs/assets/checker-archive.jpg" alt="Checker 보관함 화면: 완료한 항목의 원문 링크와 카테고리를 유지하며 복구 가능" width="440"> |
 | 출처와 카테고리를 함께 보고, 제목으로 원문 열기 | 한 번 눌러 보관하고, 필요할 때 복구하기 |
+
+</details>
 
 <p align="center"><sub>실제 앱 화면 · 촬영용 예시 데이터<br>화면과 기능 설명은 main 브랜치 기준으로, 배포된 설치 파일과 일부 차이가 있을 수 있습니다.</sub></p>
 
@@ -36,11 +48,6 @@ AI가 끝낸 작업의 결과, 다시 읽어볼 PR, 문서에서 발견한 후�
 | **자동 분류와 직접 분류** | 기존 카테고리에서 AI가 고르고, 앱에서 수정하거나 새 카테고리를 만들 수 있습니다. |
 | **보관·복구·정리** | 체크하면 보관함으로 이동합니다. 보관한 항목과 카테고리는 삭제할 수 있고, 삭제 직후 되돌릴 수 있습니다. |
 | **English / 한국어** | 앱·확장·새 AI 결과의 언어를 함께 바꿉니다. 기존 제목·메모와 직접 만든 카테고리 이름은 유지합니다. |
-
-<p align="center">
-  <img src="docs/assets/checker-compact.jpg" alt="Checker를 접으면 남은 할 일 개수만 표시하는 작은 배지" width="220"><br>
-  <sub>집중할 때는 이만큼만.</sub>
-</p>
 
 ## 시작하기
 
