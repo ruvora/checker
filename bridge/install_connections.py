@@ -126,10 +126,9 @@ def main():
     parser.add_argument('--chrome', action='store_true')
     parser.add_argument('--claude', action='store_true')
     parser.add_argument('--language', choices=['en', 'ko'])
-    parser.add_argument('--home', type=Path, default=Path.home(), help='Explicit installation home (used for isolated installs)')
     args = parser.parse_args()
     try:
-        print(json.dumps(install(args.app_bundle, args.home, codex=args.codex, chrome=args.chrome, claude=args.claude, language=args.language), ensure_ascii=False))
+        print(json.dumps(install(args.app_bundle, Path.home(), codex=args.codex, chrome=args.chrome, claude=args.claude, language=args.language), ensure_ascii=False))
     except (ValueError, KeyError, OSError) as error:
         message = str(error)
         catalog = args.app_bundle / 'Contents/Resources/capture/strings.json'

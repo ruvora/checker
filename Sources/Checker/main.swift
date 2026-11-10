@@ -25,21 +25,11 @@ struct WindowPreferences: Codable {
     var geometryWork: DispatchWorkItem?
     var changingFrame = false
     var preferencesURL: URL!
-    var agentSetup: ConnectionSetup?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         var directory = ChecklistRepository.defaultDirectory
         if let index = CommandLine.arguments.firstIndex(of: "--data-dir"), CommandLine.arguments.indices.contains(index + 1) { directory = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true) }
-        let request: AgentSetupRequest?
-        do {
-            if CommandLine.arguments.contains("--agent-setup") {
-                request = try AgentSetupRequest.parse(CommandLine.arguments, dataDirectory: directory)
-            } else {
-                request = try? AgentSetupRequest.loadPending(in: directory)
-            }
-        }
-        catch { fputs("\(error.localizedDescription)\n", stderr); NSApp.terminate(nil); return }
         model = AppModel(directory: directory)
         preferencesURL = directory.appendingPathComponent("window.json")
         let preferences = (try? Data(contentsOf: preferencesURL)).flatMap { try? JSONDecoder().decode(WindowPreferences.self, from: $0) }
@@ -72,41 +62,10 @@ struct WindowPreferences: Codable {
         timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in Task { @MainActor in self?.model.importCaptures() } }
         if preferences?.collapsed == true { toggleCollapsed() }
         panel.orderFrontRegardless()
-        if let request {
-            startAgentSetup(request)
-        } else if ConnectionSetup.needsSetup {
+        if ConnectionSetup.needsSetup {
             if model.isCollapsed { toggleCollapsed() }
             model.showConnections = true
             showWindow()
-        }
-    }
-    func startAgentSetup(_ request: AgentSetupRequest) {
-        if let language = request.language { model.setLanguage(language) }
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
-        func receipt(_ status: String, _ outcome: ConnectionOutcome? = nil) {
-            do {
-                try request.writeReceipt(status: status, app: Bundle.main.bundleURL, version: version,
-                    language: model.language, message: outcome?.message, extensionFolder: outcome?.extensionFolder)
-                if status == "configured" || status == "error" { try request.clearPending() }
-            } catch { model.errorMessage = error.localizedDescription }
-        }
-        guard ConnectionSetup.isDistribution else {
-            receipt("error", ConnectionOutcome(succeeded: false, message: "This app has no bundled installation runtime.", extensionFolder: nil)); return
-        }
-        receipt("configuring")
-        model.announce("연결을 자동으로 설정하고 있어요")
-        let setup = ConnectionSetup()
-        setup.codex = request.connections.contains("codex")
-        setup.chrome = request.connections.contains("chrome")
-        setup.claude = request.connections.contains("claude")
-        agentSetup = setup
-        setup.install(language: model.language.rawValue, home: request.home) { [weak self] outcome in
-            guard let self else { return }
-            receipt(outcome.succeeded ? "configured" : "error", outcome)
-            if outcome.succeeded { self.model.announce("설치를 완료했어요") }
-            else { self.model.errorMessage = outcome.message }
-            if request.connections.contains("chrome") || !outcome.succeeded { self.model.showConnections = true }
-            self.agentSetup = nil
         }
     }
     func installMenu() {

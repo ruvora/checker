@@ -146,7 +146,8 @@ def main():
         run(['/usr/bin/iconutil', '-c', 'icns', iconset, '-o', resources / 'Checker.icns'])
     info_file = app / 'Contents/Info.plist'
     info = plistlib.loads(info_file.read_bytes())
-    info.update(CFBundleShortVersionString=version, CFBundleIconFile='Checker.icns', CFBundleLocalizations=['en', 'ko'], CFBundleDevelopmentRegion='en', CheckerAgentInstallVersion=1)
+    info.update(CFBundleShortVersionString=version, CFBundleIconFile='Checker.icns', CFBundleLocalizations=['en', 'ko'], CFBundleDevelopmentRegion='en')
+    info.pop('CheckerAgentInstallVersion', None)
     info_file.write_bytes(plistlib.dumps(info))
     print('Signing bundled executables…', flush=True)
     signed = sign_app(app, args.sign_identity)
@@ -187,7 +188,7 @@ def main():
                 'notarized': bool(args.notary_profile), 'python': runtime_config,
                 'artifacts': [{'file': file.name, 'bytes': file.stat().st_size, 'sha256': checksum(file)} for file in [dmg, extension_zip]]}
     (output / 'release.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + '\n')
-    install_manifest = {'schemaVersion': 1, 'protocolVersion': 1, 'version': version, 'architecture': 'arm64',
+    install_manifest = {'schemaVersion': 1, 'version': version, 'architecture': 'arm64',
         'minimumMacOS': '13.0', 'signature': metadata['signature'], 'notarized': metadata['notarized'],
         'downloadURL': 'https://github.com/ruvora/checker/releases/download/v' + version + '/' + dmg.name,
         'sha256': checksum(dmg)}

@@ -22,8 +22,7 @@ cat > "$CHECKER_APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Checker</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.3.0</string>
-<key>CFBundleVersion</key><string>5</string>
-<key>CheckerAgentInstallVersion</key><integer>1</integer>
+<key>CFBundleVersion</key><string>6</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
 <key>CFBundleLocalizations</key><array><string>en</string><string>ko</string></array>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
