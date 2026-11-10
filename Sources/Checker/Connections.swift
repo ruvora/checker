@@ -38,11 +38,12 @@ struct ConnectionOutcome: Sendable {
             if let folder = info["extensionFolder"] as? String { extensionFolder = folder }
         }
     }
-    func install(language: String) {
+    func install(language: String, home: URL? = nil, completion: ((ConnectionOutcome) -> Void)? = nil) {
         guard !isBusy, let resources = Bundle.main.resourceURL else { return }
         isBusy = true; message = nil; succeeded = false
         let app = Bundle.main.bundleURL.path
         var arguments = ["-I", "-B", resources.appendingPathComponent("capture/install_connections.py").path, "--app-bundle", app, "--language", language]
+        if let home { arguments += ["--home", home.path] }
         if codex { arguments.append("--codex") }
         if chrome { arguments.append("--chrome") }
         if claude { arguments.append("--claude") }
@@ -53,6 +54,7 @@ struct ConnectionOutcome: Sendable {
             self.succeeded = outcome.succeeded
             self.message = outcome.message
             self.extensionFolder = outcome.extensionFolder ?? self.extensionFolder
+            completion?(outcome)
         }
     }
     nonisolated private static func run(command: String, arguments: [String]) -> ConnectionOutcome {

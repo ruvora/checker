@@ -146,7 +146,7 @@ def main():
         run(['/usr/bin/iconutil', '-c', 'icns', iconset, '-o', resources / 'Checker.icns'])
     info_file = app / 'Contents/Info.plist'
     info = plistlib.loads(info_file.read_bytes())
-    info.update(CFBundleShortVersionString=version, CFBundleIconFile='Checker.icns', CFBundleLocalizations=['en', 'ko'], CFBundleDevelopmentRegion='en')
+    info.update(CFBundleShortVersionString=version, CFBundleIconFile='Checker.icns', CFBundleLocalizations=['en', 'ko'], CFBundleDevelopmentRegion='en', CheckerAgentInstallVersion=1)
     info_file.write_bytes(plistlib.dumps(info))
     print('Signing bundled executables…', flush=True)
     signed = sign_app(app, args.sign_identity)
@@ -180,8 +180,6 @@ def main():
         run(['/usr/bin/xcrun', 'stapler', 'staple', dmg])
         run(['/usr/bin/xcrun', 'stapler', 'validate', dmg])
     run(['/usr/bin/hdiutil', 'verify', dmg])
-    sums = ''.join(checksum(file) + '  ' + file.name + '\n' for file in [dmg, extension_zip])
-    (output / 'SHA256SUMS.txt').write_text(sums)
     (output / '설치 안내.html').write_text(guide, encoding='utf-8')
     (output / 'Installation Guide.html').write_text(english_guide, encoding='utf-8')
     metadata = {'version': version, 'architecture': 'arm64', 'minimumMacOS': '13.0', 'languages': ['en', 'ko'],
@@ -189,6 +187,15 @@ def main():
                 'notarized': bool(args.notary_profile), 'python': runtime_config,
                 'artifacts': [{'file': file.name, 'bytes': file.stat().st_size, 'sha256': checksum(file)} for file in [dmg, extension_zip]]}
     (output / 'release.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + '\n')
+    install_manifest = {'schemaVersion': 1, 'protocolVersion': 1, 'version': version, 'architecture': 'arm64',
+        'minimumMacOS': '13.0', 'signature': metadata['signature'], 'notarized': metadata['notarized'],
+        'downloadURL': 'https://github.com/ruvora/checker/releases/download/v' + version + '/' + dmg.name,
+        'sha256': checksum(dmg)}
+    (output / 'install.json').write_text(json.dumps(install_manifest, indent=2) + '\n')
+    for name in ['install.sh', 'INSTALL.md']:
+        shutil.copy2(ROOT / name, output / name)
+    assets = [dmg, extension_zip, output / 'release.json', output / 'install.json', output / 'install.sh', output / 'INSTALL.md']
+    (output / 'SHA256SUMS.txt').write_text(''.join(checksum(file) + '  ' + file.name + '\n' for file in assets))
     print(json.dumps(metadata, ensure_ascii=False, indent=2), flush=True)
 
 

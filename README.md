@@ -4,9 +4,22 @@
 
 ## 설치 파일로 사용
 
+### AI에게 설치 맡기기
+
+아래 문구를 Codex처럼 로컬 명령을 실행할 수 있는 AI에게 전달합니다.
+
+```text
+이 안내에 따라 Checker를 설치하고, 설치된 Codex·Claude·Chrome 연결을 설정해줘. 한국어를 사용하고 남은 수동 단계를 확인해줘:
+https://raw.githubusercontent.com/ruvora/checker/main/INSTALL.md
+```
+
+앱 다운로드·검증·설치와 연결 등록을 자동화합니다. 현재 테스트 배포판의 macOS 실행 승인과 Chrome 확장 추가는 사용자 확인이 한 번 필요합니다. [AI 설치 안내 / AI installation guide](INSTALL.md)에 영어 요청 문구와 결과 확인 방법도 있습니다.
+
+### 직접 설치
+
 최신 설치 파일은 [GitHub Releases](https://github.com/ruvora/checker/releases)에서 내려받습니다. 소스 저장소에는 앱 코드와 빌드 도구를 보관하고, 생성된 설치 파일은 릴리스에 첨부합니다.
 
-`dist/Checker-0.3.1-macOS-arm64.dmg`를 열고 Checker를 Applications(응용 프로그램) 폴더로 옮긴 뒤 실행합니다. 처음 나타나는 **연결 설정**에서 사용할 도구를 선택하고 설치합니다. 앱 위쪽 톱니바퀴와 메뉴 막대의 ‘연결 설정…’에서 언제든 다시 열 수 있습니다.
+`dist/Checker-0.4.0-macOS-arm64.dmg`를 열고 Checker를 Applications(응용 프로그램) 폴더로 옮긴 뒤 실행합니다. 처음 나타나는 **연결 설정**에서 사용할 도구를 선택하고 설치합니다. 앱 위쪽 톱니바퀴와 메뉴 막대의 ‘연결 설정…’에서 언제든 다시 열 수 있습니다.
 
 배포판은 macOS 13 이상 **Apple Silicon(M1 이상)**을 지원하며 Python 실행 환경을 포함합니다. 사용자는 Python·Swift·Command Line Tools를 따로 설치하지 않습니다. Chrome AI 분석에는 Codex 앱 설치와 로그인이 필요합니다.
 
@@ -109,6 +122,7 @@ JSON
 - `failed/`: 형식이 잘못된 요청. 정상 요청을 막지 않도록 분리합니다.
 - `runtime/`: 설치한 브리지·스킬·Chrome 연결 실행 파일.
 - `analysis/jobs/`: Chrome AI 분석의 진행 상태와 결과. 분석용 본문·이미지는 `analysis/requests/`, `analysis/images/`에 잠시 저장한 뒤 삭제합니다.
+- `installations/`: AI 설치 요청과 앱이 발행한 설정 결과. 승인 대기·설정 완료를 구분합니다.
 
 테스트용 저장소는 `CHECKER_DATA_DIR` 환경 변수 또는 앱의 `--data-dir`로 분리합니다. `Checker --import-only --data-dir <폴더>`는 UI 없이 큐를 반영하는 진단 명령입니다.
 
@@ -142,6 +156,7 @@ Apple Silicon Mac에서 Python 3.12 이상과 Command Line Tools로 빌드합니
 ```sh
 python3 scripts/package.py
 python3 scripts/test_distribution.py
+python3 scripts/test_agent_install.py
 ```
 
 `VERSION`의 버전으로 다음 산출물을 만듭니다.
@@ -149,10 +164,13 @@ python3 scripts/test_distribution.py
 - `dist/Checker-<버전>-macOS-arm64.dmg`: 앱·포함된 Python·연결 설치 도구·Chrome 확장·설치 안내.
 - `dist/Checker-<버전>-Chrome-extension.zip`: Chrome 확장을 별도로 전달할 때 사용하는 압축 파일.
 - `dist/SHA256SUMS.txt`, `dist/release.json`: 파일 체크섬과 서명·공증·런타임 정보.
+- `dist/install.json`: AI 설치 도구가 사용하는 버전·공식 다운로드 URL·SHA-256. 릴리스 공개 후 저장소 루트의 `install.json`도 이 파일로 갱신합니다.
 
 Python Standalone Builds의 런타임을 지정된 버전·SHA-256으로 확인하고 포함합니다. 관련 라이선스와 고정된 소스 정보도 앱에 넣습니다. 빌드 입력은 앱 코드·연결 코드·확장·스킬·런타임으로 제한하며 사용자 데이터나 로그인 정보를 읽어 패키지에 넣지 않습니다.
 
 배포판 설치 검사는 디스크 이미지를 마운트한 뒤 앱을 임시 사용자 폴더에 복사하고 **디스크 이미지를 추출한 상태에서** 수행합니다. 포함된 Python 사용, Chrome Native Messaging → 앱 저장·확인, Codex 스킬, Claude MCP 초기화와 도구 목록을 확인합니다. 단위 검사에서는 업데이트 시 기존 설정·체크리스트 보존과 알 수 없는 연결을 덮어쓰지 않는 동작도 검사합니다.
+
+AI 설치 검사는 별도 사용자 폴더에서 다운로드 검증 이후의 신규 설치·업데이트·자동 연결 등록·결과 조회를 확인합니다. 공증 전 빌드에서는 설치 도구가 앱 실행 전에 멈추는지 확인하고, 테스트 하네스가 자체 빌드 앱을 실행해 승인 이후의 처리를 검증합니다. Gatekeeper 승인이나 설정 우회를 수행하지 않습니다.
 
 실제 AI 이미지 분석을 배포판의 Python으로 확인하는 선택 검사도 있습니다. 합성 화면만 보내며 로그인된 Codex 계정으로 실제 모델을 호출합니다.
 

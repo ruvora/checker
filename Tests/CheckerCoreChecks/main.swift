@@ -89,7 +89,36 @@ do {
         try expect(AppLanguage.preferred(["fr-FR", "ko-KR", "en-US"]) == .korean, "supported system preference not selected")
         try expect(AppLanguage.preferred(["de-DE"]) == .english, "unsupported system language did not fall back to English")
     }
-    print("7 core checks passed")
+    try check("agent setup consumes only a fresh private request for the selected home") { directory in
+        let home = directory.appendingPathComponent("user", isDirectory: true)
+        let data = home.appendingPathComponent("Library/Application Support/Checker")
+        let pending = AgentSetupRequest.pendingURL(in: data)
+        try FileManager.default.createDirectory(at: pending.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let id = UUID().uuidString.lowercased()
+        let value: [String: Any] = ["schemaVersion": 1, "requestID": id, "createdAt": 1000,
+                                  "home": home.path, "connections": "codex,chrome,claude", "language": "en"]
+        try JSONSerialization.data(withJSONObject: value).write(to: pending)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: pending.path)
+        let request = try AgentSetupRequest.loadPending(in: data, now: Date(timeIntervalSince1970: 1100))
+        try expect(request?.id == id && request?.language == .english, "valid pending setup was not read")
+        try expect(Set(request!.connections) == Set(["codex", "chrome", "claude"]), "connection selection changed")
+        let expired = try AgentSetupRequest.loadPending(in: data, now: Date(timeIntervalSince1970: 5000))
+        try expect(expired == nil, "expired setup request was accepted")
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: pending.path)
+        let publicRequest = try AgentSetupRequest.loadPending(in: data, now: Date(timeIntervalSince1970: 1100))
+        try expect(publicRequest == nil, "non-private setup request was accepted")
+        do {
+            _ = try AgentSetupRequest.parse(["Checker", "--agent-setup", id, "--connections", "chrome", "--setup-home", home.path], dataDirectory: directory)
+            throw CheckerError.invalid("cross-home request accepted")
+        } catch CheckerError.invalid(let message) where message != "cross-home request accepted" {}
+        try request!.writeReceipt(status: "configured", app: home.appendingPathComponent("Applications/Checker.app"), version: "0.4.0", language: .english)
+        let receipt = try JSONSerialization.jsonObject(with: Data(contentsOf: request!.receiptURL)) as! [String: Any]
+        try expect(receipt["status"] as? String == "configured", "setup receipt missing")
+        try expect((receipt["remainingActions"] as? [String])?.contains("chrome_extension_add_or_reload") == true, "manual Chrome step was omitted")
+        try request!.clearPending()
+        try expect(!FileManager.default.fileExists(atPath: pending.path), "completed pending request was not removed")
+    }
+    print("8 core checks passed")
 } catch {
     fputs("FAIL: \(error.localizedDescription)\n", stderr)
     exit(1)
