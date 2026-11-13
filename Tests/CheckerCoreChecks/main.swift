@@ -12,6 +12,19 @@ func check(_ name: String, _ body: (URL) throws -> Void) throws {
     print("PASS \(name)")
 }
 do {
+    try check("older documents get default colors and can save edited context and colors") { directory in
+        let repo = try ChecklistRepository(directory: directory)
+        let old = try repo.add(CaptureRequest(title: "Existing task", sourceApp: .codex, sourceURL: "codex://threads/abc", categoryID: "development"))
+        let reloaded = try ChecklistRepository(directory: directory)
+        try expect(reloaded.document.items[0].sessionName == nil && reloaded.document.categories[0].displayColor == .blue, "missing optional metadata changed old data")
+        try reloaded.setContext(old.id, sessionName: "  Fix sidebar  ", projectName: "Checker")
+        try reloaded.setCategoryColor("development", color: .teal)
+        try reloaded.archive(old.id)
+        let saved = try ChecklistRepository(directory: directory).document
+        try expect(saved.categories[0].displayColor == .teal, "edited category color did not survive reload")
+        let item = saved.items[0]
+        try expect(item.sessionName == "Fix sidebar" && item.projectName == "Checker" && item.sourceURL == old.sourceURL && item.isArchived, "editing or archiving changed item context")
+    }
     try check("review uses local completion dates, Monday weeks, and exclusive period ends") { directory in
         let calendar = ReviewPeriod.calendar(timeZone: TimeZone(identifier: "America/Los_Angeles")!)
         let iso = ISO8601DateFormatter()
