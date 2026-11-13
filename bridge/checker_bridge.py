@@ -172,6 +172,55 @@ def receipt(request_id):
     return {"status": "queued", "requestID": request_id}
 
 
+def context_name(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        name = value.strip()
+        if len(name) <= 200 and len(name.splitlines()) <= 1:
+            return name or None
+    raise ValueError(tr("세션 이름과 프로젝트명은 한 줄에 200자 이내로 적어 주세요."))
+
+
+def codex_session_name(link):
+    """Read the matching title from the local index when Codex has written one."""
+    if not link or not link.startswith("codex://threads/"):
+        return None
+    try:
+        thread_id = uuid.UUID(urlsplit(link).path.lstrip("/"))
+    except ValueError:
+        return None
+    codex_dir = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    name = None
+    try:
+        with (codex_dir / "session_index.jsonl").open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                if str(thread_id) not in line.lower():
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if not isinstance(entry, dict) or str(entry.get("id")).lower() != str(thread_id):
+                        continue
+                    name = context_name(entry.get("thread_name"))
+                except ValueError:
+                    continue
+    except OSError:
+        return None
+    return name
+
+
+def workspace_project_name():
+    # The CLI inherits the skill's working directory. MCP servers may start in an unrelated folder.
+    directory = Path.cwd()
+    for parent in (directory, *directory.parents):
+        if (parent / ".git").exists():
+            try:
+                return context_name(parent.name)
+            except ValueError:
+                return None
+    return None
+
+
 def capture(payload, wait=3.0):
     title = payload.get("title")
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > 300:
@@ -202,6 +251,10 @@ def capture(payload, wait=3.0):
         raise ValueError(tr("관련 링크는 웹페이지 주소만 쓸 수 있어요."))
     if related == link:
         related = None
+    session_name = context_name(payload.get("sessionName"))
+    project_name = context_name(payload.get("projectName"))
+    if not session_name and source == "codex":
+        session_name = codex_session_name(link)
     note = payload.get("note") or ""
     if not isinstance(note, str) or len(note) > 8000:
         raise ValueError(tr("메모는 8,000자 이내로 적어 주세요."))
@@ -222,6 +275,10 @@ def capture(payload, wait=3.0):
         return existing
     request = {"schemaVersion": 1, "requestID": request_id, "title": title.strip(), "sourceApp": source,
                "sourceURL": link, "relatedURL": related, "note": note, "categoryID": category, "createdAt": time.time()}
+    if session_name:
+        request["sessionName"] = session_name
+    if project_name:
+        request["projectName"] = project_name
     inbox = data_directory() / "inbox"
     inbox.mkdir(parents=True, exist_ok=True, mode=0o700)
     target = inbox / (request_id + ".json")
@@ -555,6 +612,8 @@ TOOLS = [
          "sourceApp": {"type": "string", "enum": ["codex", "claude", "chrome", "manual"]},
          "sourceURL": {"type": "string", "description": "Link that returns the user to the conversation or page where this task came from: codex://threads/<actual-thread-id>, claude://code/continue?session=<value of $CLAUDE_CODE_HOST_SESSION_ID> for a Claude Code session in Claude desktop, a provided Claude chat URL, or the page URL. Put a related ticket, PR, or document in relatedURL instead. Omit if unavailable; never invent IDs."},
          "relatedURL": {"type": "string", "description": "Optional web page the task is about (e.g. a Jira ticket, pull request, or document). Shown as a separate link next to the conversation link. http(s) only."},
+         "sessionName": {"type": "string", "maxLength": 200, "description": "Actual conversation or session title as displayed by the source app. Omit if unavailable; do not use an ID or guess a title."},
+         "projectName": {"type": "string", "maxLength": 200, "description": "Known project name, repository name, or workspace folder name. Send only the name, not an absolute path. Omit if unknown."},
          "note": {"type": "string", "maxLength": 8000}, "categoryID": {"type": "string"},
          "requestID": {"type": "string", "description": "UUID reused for retries of the same capture."}}, "additionalProperties": False},
      "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}}
@@ -622,6 +681,8 @@ def main():
     add.add_argument("--title")
     add.add_argument("--url")
     add.add_argument("--related-url")
+    add.add_argument("--session-name")
+    add.add_argument("--project-name")
     add.add_argument("--source", choices=["codex", "claude", "chrome", "manual"], default="manual")
     add.add_argument("--category", default="uncategorized")
     add.add_argument("--note", default="")
@@ -657,7 +718,13 @@ def main():
         elif args.command == 'analysis-status':
             result = analysis_status(args.job_id)
         else:
-            payload = json.load(sys.stdin) if args.json else {"title": args.title, "sourceURL": args.url, "relatedURL": args.related_url, "sourceApp": args.source, "categoryID": args.category, "note": args.note, "requestID": args.request_id}
+            payload = json.load(sys.stdin) if args.json else {
+                "title": args.title, "sourceURL": args.url, "relatedURL": args.related_url,
+                "sessionName": args.session_name, "projectName": args.project_name, "sourceApp": args.source,
+                "categoryID": args.category, "note": args.note, "requestID": args.request_id,
+            }
+            if payload.get("sourceApp") in ("codex", "claude") and not context_name(payload.get("projectName")):
+                payload["projectName"] = workspace_project_name()
             result = capture(payload, wait=args.wait)
         print(json.dumps(localized_response(result), ensure_ascii=False))
         return 1 if result.get("status") == "error" else 0

@@ -11,11 +11,28 @@ public enum SourceApp: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+public enum CategoryColor: String, Codable, CaseIterable, Identifiable {
+    case gray, red, orange, yellow, green, teal, blue, purple
+    public var id: String { rawValue }
+}
+
 public struct TaskCategory: Codable, Equatable, Identifiable {
     public var id: String
     public var name: String
     public var description: String
-    public init(id: String, name: String, description: String = "") { self.id = id; self.name = name; self.description = description }
+    public var color: CategoryColor?
+    public init(id: String, name: String, description: String = "", color: CategoryColor? = nil) {
+        self.id = id; self.name = name; self.description = description; self.color = color
+    }
+    public var displayColor: CategoryColor {
+        if let color { return color }
+        switch id {
+        case "development": return .blue
+        case "review": return .purple
+        case "documents": return .orange
+        default: return .gray
+        }
+    }
     public static let defaults = [
         TaskCategory(id: "development", name: "개발", description: "구현, 설계, 버그 수정, 테스트 등 개발 후속 작업"),
         TaskCategory(id: "review", name: "리뷰", description: "AI 결과, PR, 제안, 변경 내용의 검토와 의사 결정"),
@@ -37,6 +54,8 @@ public struct ChecklistItem: Codable, Equatable, Identifiable {
     public var archivedAt: Date?
     /// A related web page (ticket, PR, document), separate from `sourceURL`, which returns to the conversation.
     public var relatedURL: String? = nil
+    public var sessionName: String? = nil
+    public var projectName: String? = nil
     public var isArchived: Bool { archivedAt != nil }
 }
 
@@ -50,8 +69,11 @@ public struct CaptureRequest: Codable {
     public var categoryID: String?
     public var createdAt: Date?
     public var relatedURL: String?
-    public init(requestID: String = UUID().uuidString.lowercased(), title: String, sourceApp: SourceApp = .manual, sourceURL: String? = nil, note: String? = nil, categoryID: String? = nil, createdAt: Date? = nil, relatedURL: String? = nil) {
+    public var sessionName: String?
+    public var projectName: String?
+    public init(requestID: String = UUID().uuidString.lowercased(), title: String, sourceApp: SourceApp = .manual, sourceURL: String? = nil, note: String? = nil, categoryID: String? = nil, createdAt: Date? = nil, relatedURL: String? = nil, sessionName: String? = nil, projectName: String? = nil) {
         self.schemaVersion = 1; self.requestID = requestID; self.title = title; self.sourceApp = sourceApp; self.sourceURL = sourceURL; self.note = note; self.categoryID = categoryID; self.createdAt = createdAt; self.relatedURL = relatedURL
+        self.sessionName = sessionName; self.projectName = projectName
     }
 }
 

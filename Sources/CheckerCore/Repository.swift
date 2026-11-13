@@ -53,7 +53,9 @@ public final class ChecklistRepository {
         let related = try SourceLink.validatedWeb(request.relatedURL)
         guard (request.note ?? "").count <= 8000 else { throw CheckerError.invalid("메모가 너무 길어요. 8,000자 이내로 줄여 주세요.") }
         let category = document.categories.contains(where: { $0.id == request.categoryID }) ? request.categoryID! : "uncategorized"
-        let item = ChecklistItem(id: id, title: title, sourceApp: request.sourceApp, sourceURL: link, note: request.note ?? "", categoryID: category, createdAt: request.createdAt ?? now, updatedAt: now, orderDate: now, archivedAt: nil, relatedURL: related == link ? nil : related)
+        let sessionName = try contextName(request.sessionName)
+        let projectName = try contextName(request.projectName)
+        let item = ChecklistItem(id: id, title: title, sourceApp: request.sourceApp, sourceURL: link, note: request.note ?? "", categoryID: category, createdAt: request.createdAt ?? now, updatedAt: now, orderDate: now, archivedAt: nil, relatedURL: related == link ? nil : related, sessionName: sessionName, projectName: projectName)
         try commit { $0.items.append(item) }
         return item
     }
@@ -63,6 +65,23 @@ public final class ChecklistRepository {
     public func setCategory(_ id: String, categoryID: String) throws {
         guard document.categories.contains(where: { $0.id == categoryID }) else { throw CheckerError.invalid("카테고리를 찾을 수 없어요.") }
         try update(id) { $0.categoryID = categoryID; $0.updatedAt = Date() }
+    }
+    public func setContext(_ id: String, sessionName: String?, projectName: String?) throws {
+        let session = try contextName(sessionName)
+        let project = try contextName(projectName)
+        try update(id) {
+            $0.sessionName = session
+            $0.projectName = project
+            $0.updatedAt = Date()
+        }
+    }
+
+    private func contextName(_ value: String?) throws -> String? {
+        guard let name = value?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+        guard name.unicodeScalars.count <= 200, name.rangeOfCharacter(from: .newlines) == nil else {
+            throw CheckerError.invalid("세션 이름과 프로젝트명은 한 줄에 200자 이내로 적어 주세요.")
+        }
+        return name
     }
     public func replace(_ item: ChecklistItem) throws { try update(item.id) { $0 = item } }
     /// Permanently removes archived items. Active items must be archived first.
@@ -88,11 +107,21 @@ public final class ChecklistRepository {
         }
     }
 
-    public func addCategory(name: String) throws {
+    public func addCategory(name: String, color: CategoryColor? = nil) throws {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name.count <= 20 else { throw CheckerError.invalid("카테고리 이름을 20자 이내로 적어 주세요.") }
         guard !document.categories.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { throw CheckerError.invalid("같은 이름의 카테고리가 있어요.") }
-        try commit { $0.categories.insert(TaskCategory(id: "custom-" + UUID().uuidString.lowercased(), name: name), at: max(0, $0.categories.count - 1)) }
+        let category = TaskCategory(id: "custom-" + UUID().uuidString.lowercased(), name: name, color: color)
+        try commit { $0.categories.insert(category, at: max(0, $0.categories.count - 1)) }
+    }
+
+    public func setCategoryColor(_ id: String, color: CategoryColor) throws {
+        try commit { document in
+            guard let index = document.categories.firstIndex(where: { $0.id == id }) else {
+                throw CheckerError.invalid("카테고리를 찾을 수 없어요.")
+            }
+            document.categories[index].color = color
+        }
     }
 
     /// A category removed by `deleteCategory`, with what is needed to put it back.

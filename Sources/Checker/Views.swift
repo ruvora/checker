@@ -64,6 +64,7 @@ struct ChecklistView: View {
     @ObservedObject var model: AppModel
     @State private var confirmEmpty = false
     @State private var categoryToDelete: TaskCategory?
+    @State private var categoryToRecolor: TaskCategory?
     @State private var reviewPeriod: ReviewPeriod = .week
     @State private var reviewDate = Date()
     var body: some View {
@@ -84,7 +85,9 @@ struct ChecklistView: View {
             Text(count > 0 ? model.text("이 카테고리의 항목 {count}개는 미분류로 옮겨요. 항목은 지워지지 않아요.", ["count": String(count)]) : model.text("이 카테고리에는 항목이 없어요."))
         }
         .sheet(isPresented: $model.showAdd) { AddItemView(model: model) }
-        .sheet(isPresented: $model.showCategoryEditor) { AddCategoryView(model: model) }
+        .sheet(isPresented: $model.showCategoryEditor) { CategoryEditor(model: model) }
+        .sheet(item: $categoryToRecolor) { CategoryEditor(model: model, category: $0) }
+        .sheet(item: $model.contextItem) { TaskContextEditor(model: model, item: $0) }
         .sheet(isPresented: $model.showConnections) { ConnectionsView(model: model) }
         .sheet(item: $model.noteItem) { item in
             VStack(alignment: .leading, spacing: 16) {
@@ -121,8 +124,10 @@ struct ChecklistView: View {
             }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 17).padding(.bottom, 12)
             if model.scope != .review {
                 FlowLayout {
-                    categoryButton(model.text("전체"), id: nil)
-                    ForEach(model.document.categories) { category in categoryButton(category.displayName(in: model.language), id: category.id) }
+                    categoryButton(model.text("전체"))
+                    ForEach(model.document.categories) { category in
+                        categoryButton(category.displayName(in: model.language), category: category)
+                    }
                     Button { model.showCategoryEditor = true } label: { Image(systemName: "plus").font(.system(size: 10)).padding(6) }
                         .buttonStyle(.plain).foregroundColor(Palette.muted).help(model.text("카테고리 추가")).accessibilityLabel(model.text("카테고리 추가"))
                 }.padding(.horizontal, 17).padding(.bottom, 13)
@@ -186,22 +191,31 @@ struct ChecklistView: View {
             }.buttonStyle(.plain).help(model.text("{name} 열기", ["name": name])).accessibilityLabel(model.text("{name} 열기", ["name": name]))
         }
     }
-    private func categoryButton(_ name: String, id: String?) -> some View {
+    private func categoryButton(_ name: String, category: TaskCategory? = nil) -> some View {
+        let id = category?.id
         let count = model.categoryCount(id)
         return Button { model.categoryID = id } label: {
-            HStack(spacing: 5) { Text(name); if count > 0 { Text("\(count)").monospacedDigit() } }
+            HStack(spacing: 5) {
+                if let category { CategoryDot(color: category.displayColor) }
+                Text(name)
+                if count > 0 { Text("\(count)").monospacedDigit() }
+            }
                 .font(.system(size: 10)).padding(.horizontal, 7).padding(.vertical, 5)
                 .foregroundColor(model.categoryID == id ? .primary : Palette.muted)
                 .background(model.categoryID == id ? Palette.soft : .clear).clipShape(RoundedRectangle(cornerRadius: 6))
         }.buttonStyle(.plain).accessibilityLabel(model.text("카테고리 {name}", ["name": name])).accessibilityAddTraits(model.categoryID == id ? .isSelected : [])
         .contextMenu {
-            if let id, id != "uncategorized", let category = model.document.categories.first(where: { $0.id == id }) {
-                Button(model.text("카테고리 삭제…"), role: .destructive) { categoryToDelete = category }
+            if let category {
+                Button(model.text("카테고리 색상 변경…")) { categoryToRecolor = category }
+                if category.id != "uncategorized" {
+                    Button(model.text("카테고리 삭제…"), role: .destructive) { categoryToDelete = category }
+                }
             }
         }
     }
     private func itemRow(_ item: ChecklistItem) -> some View {
-        VStack(spacing: 0) {
+        let categoryColor = model.categoryColor(item.categoryID)
+        return VStack(spacing: 0) {
             Rectangle().fill(Palette.line).frame(height: 1)
             HStack(alignment: .top, spacing: 10) {
                 if !model.showArchived {
@@ -214,10 +228,23 @@ struct ChecklistView: View {
                             .buttonStyle(.plain).font(.system(size: 13, weight: .medium)).help(item.sourceURL ?? "").accessibilityLabel(model.text("{title}, {source} 원문 열기", ["title": item.title, "source": model.text(item.sourceApp.label)]))
                     } else { Text(item.title).font(.system(size: 13, weight: .medium)).fixedSize(horizontal: false, vertical: true) }
                     FlowLayout(spacing: 6) {
-                        Menu {
-                            ForEach(model.document.categories) { category in Button(category.displayName(in: model.language)) { model.changeCategory(item, to: category.id) } }
-                        } label: { HStack(spacing: 3) { Text(model.categoryName(item.categoryID)); Image(systemName: "chevron.down").font(.system(size: 7)) }.font(.system(size: 10)).padding(.horizontal, 6).padding(.vertical, 3).background(Palette.soft).clipShape(RoundedRectangle(cornerRadius: 5)) }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel(model.text("{title} 카테고리", ["title": item.title]))
+                        HStack(spacing: 4) {
+                            CategoryDot(color: categoryColor)
+                            Menu {
+                                ForEach(model.document.categories) { category in
+                                    Button(category.displayName(in: model.language)) { model.changeCategory(item, to: category.id) }
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Text(model.categoryName(item.categoryID))
+                                    Image(systemName: "chevron.down").font(.system(size: 7))
+                                }
+                            }
+                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                            .accessibilityLabel(model.text("{title} 카테고리", ["title": item.title]))
+                        }
+                        .font(.system(size: 10)).padding(.horizontal, 5)
+                        .background(categoryColor.tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 5))
                         HStack(spacing: 4) { Image(systemName: item.sourceApp.symbol); Text(model.text(item.sourceApp.label)) }.font(.system(size: 10)).foregroundColor(Palette.muted)
                         if let url = item.sourceURL.flatMap({ URL(string: $0) }), url.scheme?.hasPrefix("http") == true, let host = url.host { Text(host.replacingOccurrences(of: "www.", with: "")).font(.system(size: 10)).foregroundColor(Palette.muted) }
                         // The title returns to the conversation; this opens the related site (ticket, PR, document).
@@ -229,6 +256,7 @@ struct ChecklistView: View {
                             }.buttonStyle(.plain).help(related).accessibilityLabel(model.text("{host} 열기", ["host": name]))
                         }
                     }
+                    TaskContextLine(item: item, language: model.language)
                     if let date = item.archivedAt { Text(date, style: .relative).font(.system(size: 10)).foregroundColor(Palette.muted) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 if model.showArchived {
@@ -240,6 +268,7 @@ struct ChecklistView: View {
                 }
             }.padding(.vertical, 17)
             .contextMenu {
+                Button(model.text("작업 출처 편집…")) { model.contextItem = item }
                 if !item.note.isEmpty { Button(model.text("메모 보기")) { model.noteItem = item } }
                 if let link = item.sourceURL { Button(model.text("원문 링크 복사")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(link, forType: .string) } }
                 if let link = item.relatedURL { Button(model.text("관련 링크 복사")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(link, forType: .string) } }
@@ -278,6 +307,8 @@ struct AddItemView: View {
     @State private var title = ""
     @State private var link = ""
     @State private var note = ""
+    @State private var sessionName = ""
+    @State private var projectName = ""
     @State private var source = SourceApp.manual
     @State private var category = "uncategorized"
     @State private var error: String?
@@ -291,26 +322,59 @@ struct AddItemView: View {
                 Picker(model.text("출처"), selection: $source) { ForEach(SourceApp.allCases) { Text(model.text($0.label)).tag($0) } }
                 Picker(model.text("카테고리"), selection: $category) { ForEach(model.document.categories) { Text($0.displayName(in: model.language)).tag($0.id) } }
             }
+            HStack {
+                TextField(model.text("프로젝트명 (선택)"), text: $projectName).textFieldStyle(.roundedBorder)
+                TextField(model.text("세션 이름 (선택)"), text: $sessionName).textFieldStyle(.roundedBorder)
+            }
             TextField(model.text("함께 남길 메모 (선택)"), text: $note).textFieldStyle(.roundedBorder)
             if let error { Text(model.text(error)).font(.system(size: 11)).foregroundColor(.red) }
             HStack { Button(model.text("취소")) { dismiss() }.keyboardShortcut(.cancelAction); Spacer(); Button(model.text("추가")) {
-                do { try model.add(CaptureRequest(title: title, sourceApp: source, sourceURL: link, note: note, categoryID: category)); dismiss() } catch { self.error = error.localizedDescription }
+                do {
+                    try model.add(CaptureRequest(title: title, sourceApp: source, sourceURL: link, note: note,
+                                                 categoryID: category, sessionName: sessionName, projectName: projectName))
+                    dismiss()
+                } catch { self.error = error.localizedDescription }
             }.keyboardShortcut(.defaultAction).disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }.padding(24).frame(width: 420)
     }
 }
 
-struct AddCategoryView: View {
+struct CategoryEditor: View {
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     @State private var name = ""
+    @State private var color: CategoryColor
     @State private var error: String?
+    let category: TaskCategory?
+
+    init(model: AppModel, category: TaskCategory? = nil) {
+        self.model = model
+        self.category = category
+        _color = State(initialValue: category?.displayColor ?? .gray)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text(model.text("카테고리 추가")).font(.headline)
-            TextField(model.text("카테고리 이름"), text: $name).textFieldStyle(.roundedBorder)
+            if let category {
+                Text(category.displayName(in: model.language)).font(.headline)
+            } else {
+                Text(model.text("카테고리 추가")).font(.headline)
+                TextField(model.text("카테고리 이름"), text: $name).textFieldStyle(.roundedBorder)
+            }
+            CategoryColorPicker(model: model, selection: $color)
             if let error { Text(model.text(error)).font(.system(size: 11)).foregroundColor(.red) }
-            HStack { Button(model.text("취소")) { dismiss() }; Spacer(); Button(model.text("추가")) { do { try model.addCategory(name); dismiss() } catch { self.error = error.localizedDescription } }.keyboardShortcut(.defaultAction) }
+            HStack {
+                Button(model.text("취소")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(model.text(category == nil ? "추가" : "저장")) {
+                    do {
+                        if let category { try model.changeCategoryColor(category, to: color) }
+                        else { try model.addCategory(name, color: color) }
+                        dismiss()
+                    } catch { self.error = error.localizedDescription }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
         }.padding(24).frame(width: 320)
     }
 }

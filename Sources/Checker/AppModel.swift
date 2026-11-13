@@ -15,6 +15,7 @@ enum ChecklistScope { case active, archive, review }
     @Published var showCategoryEditor = false
     @Published var showConnections = false
     @Published var noteItem: ChecklistItem?
+    @Published var contextItem: ChecklistItem?
     @Published var errorMessage: String?
     @Published var fatalError: String?
     @Published var toast: String?
@@ -64,7 +65,9 @@ enum ChecklistScope { case active, archive, review }
     }
     var activeCount: Int { document.items.filter { !$0.isArchived }.count }
     var archiveCount: Int { document.items.filter(\.isArchived).count }
-    func categoryName(_ id: String) -> String { document.categories.first { $0.id == id }?.displayName(in: language) ?? text("미분류") }
+    func categoryName(_ id: String) -> String { category(id)?.displayName(in: language) ?? text("미분류") }
+    func categoryColor(_ id: String) -> CategoryColor { category(id)?.displayColor ?? .gray }
+    private func category(_ id: String) -> TaskCategory? { document.categories.first { $0.id == id } }
     func categoryCount(_ id: String?) -> Int { scopeItems.filter { id == nil || $0.categoryID == id }.count }
 
     private func act(on item: ChecklistItem, message: String, _ action: (ChecklistRepository) throws -> Void) {
@@ -111,9 +114,25 @@ enum ChecklistScope { case active, archive, review }
         guard let repository else { throw CheckerError.invalid("저장소를 열 수 없어요.") }
         _ = try repository.add(request); document = repository.document; undoAction = nil; announce("할 일을 추가했어요")
     }
-    func addCategory(_ name: String) throws {
+    func addCategory(_ name: String, color: CategoryColor) throws {
         guard let repository else { throw CheckerError.invalid("저장소를 열 수 없어요.") }
-        try repository.addCategory(name: name); document = repository.document
+        try repository.addCategory(name: name, color: color); document = repository.document
+    }
+    func changeCategoryColor(_ category: TaskCategory, to color: CategoryColor) throws {
+        guard let repository else { throw CheckerError.invalid("저장소를 열 수 없어요.") }
+        try repository.setCategoryColor(category.id, color: color)
+        document = repository.document
+    }
+    func changeContext(_ item: ChecklistItem, sessionName: String, projectName: String) throws {
+        guard let repository else { throw CheckerError.invalid("저장소를 열 수 없어요.") }
+        try repository.setContext(item.id, sessionName: sessionName, projectName: projectName)
+        document = repository.document
+        if case .replace(var previous) = undoAction, previous.id == item.id,
+           let saved = document.items.first(where: { $0.id == item.id }) {
+            previous.sessionName = saved.sessionName
+            previous.projectName = saved.projectName
+            undoAction = .replace(previous)
+        }
     }
     func openSource(_ item: ChecklistItem) {
         guard let raw = item.sourceURL else { return }

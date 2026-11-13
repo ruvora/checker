@@ -57,6 +57,31 @@ class BridgeTests(unittest.TestCase):
         saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
         self.assertEqual(saved['sourceURL'], 'codex://threads/' + thread_id)
 
+    def test_cli_records_the_matching_codex_title_and_repo_folder(self):
+        root = Path(self.temporary.name)
+        workspace = root / 'Checker Demo'
+        subfolder = workspace / 'Sources'
+        (workspace / '.git').mkdir(parents=True)
+        subfolder.mkdir()
+        codex = root / 'codex'
+        codex.mkdir()
+        thread = str(uuid.uuid4())
+        entries = [
+            {'id': thread, 'thread_name': 'Original name'},
+            {'id': str(uuid.uuid4()), 'thread_name': 'Unrelated thread'},
+            {'id': thread, 'thread_name': 'Renamed thread'},
+        ]
+        (codex / 'session_index.jsonl').write_text('\n'.join(map(json.dumps, entries)))
+        result = subprocess.run(
+            [sys.executable, str(BRIDGE), 'add', '--json', '--wait', '0'],
+            input=json.dumps({'title': 'Verify display', 'sourceApp': 'codex'}),
+            cwd=subfolder, env=dict(os.environ, CODEX_HOME=str(codex), CODEX_THREAD_ID=thread),
+            text=True, capture_output=True, check=True,
+        )
+        request = json.loads(result.stdout)
+        saved = json.loads((root / 'inbox' / (request['requestID'] + '.json')).read_text())
+        self.assertEqual((saved['sessionName'], saved['projectName']), ('Renamed thread', 'Checker Demo'))
+
     def test_claude_code_session_link_is_accepted_and_filled_only_when_known(self):
         link = 'claude://code/continue?session=local_7baffd25-7faf-42e1-bda1-2f90d76a37e6'
         result = bridge.capture({'title': '세션으로 돌아가기', 'sourceApp': 'claude', 'sourceURL': link}, wait=0)
@@ -152,7 +177,8 @@ class BridgeTests(unittest.TestCase):
         binary = Path(os.environ.get('CHECKER_TEST_BINARY', ROOT / '.build/debug/Checker'))
         if not binary.exists():
             self.skipTest('Build the Swift app first')
-        payload = {'title': '브리지 통합 확인', 'sourceApp': 'chrome', 'sourceURL': 'https://example.com/check', 'categoryID': 'review'}
+        payload = {'title': '브리지 통합 확인', 'sourceApp': 'claude', 'sourceURL': 'https://claude.ai/chat/example',
+                   'categoryID': 'review', 'sessionName': '  화면 검토  ', 'projectName': 'Checker'}
         result = bridge.capture(payload, wait=0)
         subprocess.run([str(binary), '--import-only', '--data-dir', self.temporary.name], check=True, capture_output=True)
         stored = bridge.receipt(result['requestID'])
@@ -162,6 +188,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(bridge.capture(payload, wait=0)['status'], 'added')
         document = json.loads(Path(self.temporary.name, 'checklist.json').read_text())
         self.assertEqual(len(document['items']), 1)
+        self.assertEqual((document['items'][0]['sessionName'], document['items'][0]['projectName']), ('화면 검토', 'Checker'))
 
 
 if __name__ == '__main__':

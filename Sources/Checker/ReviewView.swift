@@ -6,8 +6,6 @@ struct ReviewView: View {
     @ObservedObject var model: AppModel
     @Binding var period: ReviewPeriod
     @Binding var date: Date
-    @State private var calendarOpen = false
-
     private let calendar = ReviewPeriod.calendar()
     private var today: Date { calendar.startOfDay(for: Date()) }
     private var range: Range<Date> { period.range(containing: date, calendar: calendar) }
@@ -21,13 +19,7 @@ struct ReviewView: View {
                 FlowLayout(spacing: 6) {
                     periodPicker
                     dateNavigation
-                    HStack(spacing: 6) {
-                        toolbarButton(model.text("오늘")) { date = today }
-                        if !wide {
-                            toolbarButton(model.text("달력"), selected: calendarOpen) { calendarOpen.toggle() }
-                                .accessibilityAddTraits(calendarOpen ? .isSelected : [])
-                        }
-                    }
+                    toolbarButton(model.text("오늘")) { date = today }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16).padding(.vertical, 8)
@@ -43,10 +35,9 @@ struct ReviewView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 0) {
-                            if calendarOpen {
-                                calendarPanel(review.countsByDay).padding(16)
-                                Divider().overlay(Palette.line)
-                            }
+                            calendarPanel(review.countsByDay, compact: true)
+                                .padding(.horizontal, 16).padding(.vertical, 12)
+                            Divider().overlay(Palette.line)
                             results(review, wide: false).padding(16)
                         }
                     }
@@ -94,18 +85,17 @@ struct ReviewView: View {
         .buttonStyle(.plain).foregroundColor(Palette.muted).help(label).accessibilityLabel(label)
     }
 
-    private func toolbarButton(_ title: String, selected: Bool = false, action: @escaping () -> Void) -> some View {
+    private func toolbarButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title).font(.system(size: 11, weight: .medium))
                 .padding(.horizontal, 8).frame(height: 26)
                 .foregroundColor(Palette.accent)
-                .background(selected ? Palette.selected : .clear, in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.line))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 
-    private func calendarPanel(_ counts: [Date: Int]) -> some View {
+    private func calendarPanel(_ counts: [Date: Int], compact: Bool = false) -> some View {
         let days = ReviewPeriod.monthGrid(containing: date, calendar: calendar)
         var calendar = calendar
         calendar.locale = model.language.locale
@@ -123,21 +113,18 @@ struct ReviewView: View {
                         .accessibilityHidden(true)
                 }
                 ForEach(days, id: \.self) { day in
-                    dateButton(day, count: counts[calendar.startOfDay(for: day), default: 0])
+                    dateButton(day, count: counts[calendar.startOfDay(for: day), default: 0], height: compact ? 26 : 32)
                 }
             }
         }
     }
 
-    private func dateButton(_ day: Date, count: Int) -> some View {
+    private func dateButton(_ day: Date, count: Int, height: CGFloat) -> some View {
         let anchor = calendar.isDate(day, inSameDayAs: date)
         let currentDay = calendar.isDate(day, inSameDayAs: today)
         let inMonth = calendar.isDate(day, equalTo: date, toGranularity: .month)
         let selected = range.contains(day)
-        return Button {
-            date = day
-            calendarOpen = false
-        } label: {
+        return Button { date = day } label: {
             VStack(spacing: 1) {
                 Text("\(calendar.component(.day, from: day))")
                     .font(.system(size: 11, weight: anchor || currentDay ? .semibold : .regular))
@@ -148,7 +135,7 @@ struct ReviewView: View {
                 }
             }
             .monospacedDigit()
-            .frame(maxWidth: .infinity).frame(height: 32)
+            .frame(maxWidth: .infinity).frame(height: height)
             .foregroundColor(anchor ? Palette.background : selected || currentDay ? Palette.accent : inMonth ? .primary : Palette.muted)
             .background(anchor ? Palette.accent : selected ? Palette.selected : .clear, in: RoundedRectangle(cornerRadius: 5))
             .contentShape(Rectangle())
@@ -212,8 +199,11 @@ struct ReviewView: View {
 
     private func taskRow(_ item: ChecklistItem, wide: Bool) -> some View {
         let source = model.text(item.sourceApp.label)
-        let metadata = Text(model.categoryName(item.categoryID) + " · " + source)
-            .font(.system(size: 10)).foregroundColor(Palette.muted)
+        let metadata = HStack(spacing: 4) {
+            CategoryDot(color: model.categoryColor(item.categoryID))
+            Text(model.categoryName(item.categoryID) + " · " + source)
+                .font(.system(size: 10)).foregroundColor(Palette.muted)
+        }
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "checkmark").font(.system(size: 10, weight: .medium))
                 .foregroundColor(Palette.accent).accessibilityHidden(true)
@@ -231,11 +221,13 @@ struct ReviewView: View {
                     Text(item.title).fixedSize(horizontal: false, vertical: true)
                 }
                 if !wide { metadata }
+                TaskContextLine(item: item, language: model.language)
             }
             .font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading)
             if wide { metadata.lineLimit(1).frame(maxWidth: 145, alignment: .trailing) }
         }
         .contextMenu {
+            Button(model.text("작업 출처 편집…")) { model.contextItem = item }
             if !item.note.isEmpty { Button(model.text("메모 보기")) { model.noteItem = item } }
             if let link = item.sourceURL {
                 Button(model.text("원문 링크 복사")) {
