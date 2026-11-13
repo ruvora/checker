@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "architecture": "arm64",
   "minimumMacOS": "13.0",
   "signature": "ad-hoc",
   "notarized": false,
-  "downloadURL": "https://github.com/ruvora/checker/releases/download/v0.6.0/Checker-0.6.0-macOS-arm64.dmg",
-  "sha256": "98c17297fe87df8e6201a90c13494dcfdb95a0aebb47c675a0c1ed93a6f155b0"
+  "downloadURL": "https://github.com/ruvora/checker/releases/download/v0.7.0/Checker-0.7.0-macOS-arm64.dmg",
+  "sha256": "3b998daf139545ce394ff1b3d3e22b5066c9880a13229afe9a0660519dd93f02"
 }
