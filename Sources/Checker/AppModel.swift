@@ -126,6 +126,12 @@ enum ChecklistScope { case active, archive, review }
             } else if !NSWorkspace.shared.open(url) { errorMessage = "이 링크를 열 앱을 찾지 못했어요. 원문 앱이 설치되어 있는지 확인해 주세요." }
         } catch { errorMessage = error.localizedDescription }
     }
+    func openRelated(_ item: ChecklistItem) {
+        do {
+            guard let safe = try SourceLink.validatedWeb(item.relatedURL), let url = URL(string: safe) else { return }
+            if !NSWorkspace.shared.open(url) { errorMessage = "이 링크를 열 앱을 찾지 못했어요. 원문 앱이 설치되어 있는지 확인해 주세요." }
+        } catch { errorMessage = error.localizedDescription }
+    }
     func importCaptures() {
         reloadLanguage()
         guard let repository else { return }

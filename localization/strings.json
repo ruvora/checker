@@ -234,5 +234,10 @@
   "‘{name}’ 카테고리를 삭제할까요?": "Delete the “{name}” category?",
   "이 카테고리의 항목 {count}개는 미분류로 옮겨요. 항목은 지워지지 않아요.": "Its {count} item(s) move to Uncategorized. No items are deleted.",
   "이 카테고리에는 항목이 없어요.": "This category has no items.",
-  "{name} 열기": "Open {name}"
+  "{name} 열기": "Open {name}",
+  "Claude Code 세션 링크를 확인해 주세요.": "Check the Claude Code session link.",
+  "https, http, Codex 대화 또는 Claude Code 세션 링크를 사용할 수 있어요.": "Use an https, http, Codex conversation, or Claude Code session link.",
+  "관련 링크는 웹페이지 주소만 쓸 수 있어요.": "Related links must be web page addresses.",
+  "{host} 열기": "Open {host}",
+  "관련 링크 복사": "Copy Related Link"
 }
