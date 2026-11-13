@@ -119,6 +119,16 @@ def categories(language=None):
     return result
 
 
+# Claude desktop opens a specific Claude Code session with this link (session IDs look like local_<id>).
+CLAUDE_SESSION_LINK = re.compile(r"^claude://code/continue\?session=local_[A-Za-z0-9-]{1,64}$")
+
+
+def claude_session_link():
+    session = os.environ.get("CLAUDE_CODE_HOST_SESSION_ID", "")
+    link = "claude://code/continue?session=" + session
+    return link if CLAUDE_SESSION_LINK.match(link) else None
+
+
 def valid_source_url(raw):
     if raw is None or not str(raw).strip():
         return None
@@ -134,8 +144,11 @@ def valid_source_url(raw):
     elif parsed.scheme == "codex":
         if parsed.netloc != "threads" or len(parsed.path) <= 1 or parsed.path == "/new":
             raise ValueError(tr("Codex의 해당 대화 링크를 입력해 주세요."))
+    elif parsed.scheme == "claude":
+        if not CLAUDE_SESSION_LINK.match(raw):
+            raise ValueError(tr("Claude Code 세션 링크를 확인해 주세요."))
     else:
-        raise ValueError(tr("https, http 또는 Codex 대화 링크를 사용할 수 있어요."))
+        raise ValueError(tr("https, http, Codex 대화 또는 Claude Code 세션 링크를 사용할 수 있어요."))
     return raw
 
 
@@ -167,16 +180,32 @@ def capture(payload, wait=3.0):
     if source not in ("codex", "claude", "chrome", "manual"):
         raise ValueError(tr("출처는 codex, claude, chrome, manual 중 하나여야 해요."))
     raw_url = payload.get("sourceURL")
-    if not raw_url and source == "codex" and os.environ.get("CODEX_THREAD_ID"):
+    raw_related = payload.get("relatedURL")
+    conversation = None
+    if source == "codex" and os.environ.get("CODEX_THREAD_ID"):
         try:
-            raw_url = "codex://threads/" + str(uuid.UUID(os.environ["CODEX_THREAD_ID"]))
+            conversation = "codex://threads/" + str(uuid.UUID(os.environ["CODEX_THREAD_ID"]))
         except ValueError:
             pass
+    elif source == "claude":
+        conversation = claude_session_link()
+    # The title link returns to the conversation. When the caller passed a web page (a ticket or PR)
+    # but the real conversation is known, keep the page as the related link instead of losing the way back.
+    if conversation and raw_url and urlsplit(str(raw_url).strip()).scheme in ("http", "https"):
+        raw_related = raw_related or raw_url
+        raw_url = None
+    if not raw_url:
+        raw_url = conversation
     link = valid_source_url(raw_url)
+    related = valid_source_url(raw_related)
+    if related and urlsplit(related).scheme not in ("http", "https"):
+        raise ValueError(tr("관련 링크는 웹페이지 주소만 쓸 수 있어요."))
+    if related == link:
+        related = None
     note = payload.get("note") or ""
     if not isinstance(note, str) or len(note) > 8000:
         raise ValueError(tr("메모는 8,000자 이내로 적어 주세요."))
-    # Claude Code sessions have no openable link; keep the real session ID so it can be resumed.
+    # Without a session link (e.g. Claude Code in a terminal), keep the real session ID so it can be resumed.
     if not link and source == "claude" and os.environ.get("CLAUDE_CODE_SESSION_ID"):
         try:
             session = str(uuid.UUID(os.environ["CLAUDE_CODE_SESSION_ID"]))
@@ -192,7 +221,7 @@ def capture(payload, wait=3.0):
     if existing["status"] != "queued":
         return existing
     request = {"schemaVersion": 1, "requestID": request_id, "title": title.strip(), "sourceApp": source,
-               "sourceURL": link, "note": note, "categoryID": category, "createdAt": time.time()}
+               "sourceURL": link, "relatedURL": related, "note": note, "categoryID": category, "createdAt": time.time()}
     inbox = data_directory() / "inbox"
     inbox.mkdir(parents=True, exist_ok=True, mode=0o700)
     target = inbox / (request_id + ".json")
@@ -524,7 +553,8 @@ TOOLS = [
      "inputSchema": {"type": "object", "required": ["title", "sourceApp", "categoryID"], "properties": {
          "title": {"type": "string", "minLength": 1, "maxLength": 300},
          "sourceApp": {"type": "string", "enum": ["codex", "claude", "chrome", "manual"]},
-         "sourceURL": {"type": "string", "description": "Exact conversation/page link, e.g. a provided Claude chat URL or codex://threads/<actual-thread-id>. Omit if unavailable."},
+         "sourceURL": {"type": "string", "description": "Link that returns the user to the conversation or page where this task came from: codex://threads/<actual-thread-id>, claude://code/continue?session=<value of $CLAUDE_CODE_HOST_SESSION_ID> for a Claude Code session in Claude desktop, a provided Claude chat URL, or the page URL. Put a related ticket, PR, or document in relatedURL instead. Omit if unavailable; never invent IDs."},
+         "relatedURL": {"type": "string", "description": "Optional web page the task is about (e.g. a Jira ticket, pull request, or document). Shown as a separate link next to the conversation link. http(s) only."},
          "note": {"type": "string", "maxLength": 8000}, "categoryID": {"type": "string"},
          "requestID": {"type": "string", "description": "UUID reused for retries of the same capture."}}, "additionalProperties": False},
      "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}}
@@ -591,6 +621,7 @@ def main():
     add.add_argument("--json", action="store_true", help="Read one JSON capture from stdin")
     add.add_argument("--title")
     add.add_argument("--url")
+    add.add_argument("--related-url")
     add.add_argument("--source", choices=["codex", "claude", "chrome", "manual"], default="manual")
     add.add_argument("--category", default="uncategorized")
     add.add_argument("--note", default="")
@@ -626,7 +657,7 @@ def main():
         elif args.command == 'analysis-status':
             result = analysis_status(args.job_id)
         else:
-            payload = json.load(sys.stdin) if args.json else {"title": args.title, "sourceURL": args.url, "sourceApp": args.source, "categoryID": args.category, "note": args.note, "requestID": args.request_id}
+            payload = json.load(sys.stdin) if args.json else {"title": args.title, "sourceURL": args.url, "relatedURL": args.related_url, "sourceApp": args.source, "categoryID": args.category, "note": args.note, "requestID": args.request_id}
             result = capture(payload, wait=args.wait)
         print(json.dumps(localized_response(result), ensure_ascii=False))
         return 1 if result.get("status") == "error" else 0

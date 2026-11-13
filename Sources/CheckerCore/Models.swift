@@ -35,6 +35,8 @@ public struct ChecklistItem: Codable, Equatable, Identifiable {
     public var updatedAt: Date
     public var orderDate: Date
     public var archivedAt: Date?
+    /// A related web page (ticket, PR, document), separate from `sourceURL`, which returns to the conversation.
+    public var relatedURL: String? = nil
     public var isArchived: Bool { archivedAt != nil }
 }
 
@@ -47,8 +49,9 @@ public struct CaptureRequest: Codable {
     public var note: String?
     public var categoryID: String?
     public var createdAt: Date?
-    public init(requestID: String = UUID().uuidString.lowercased(), title: String, sourceApp: SourceApp = .manual, sourceURL: String? = nil, note: String? = nil, categoryID: String? = nil, createdAt: Date? = nil) {
-        self.schemaVersion = 1; self.requestID = requestID; self.title = title; self.sourceApp = sourceApp; self.sourceURL = sourceURL; self.note = note; self.categoryID = categoryID; self.createdAt = createdAt
+    public var relatedURL: String?
+    public init(requestID: String = UUID().uuidString.lowercased(), title: String, sourceApp: SourceApp = .manual, sourceURL: String? = nil, note: String? = nil, categoryID: String? = nil, createdAt: Date? = nil, relatedURL: String? = nil) {
+        self.schemaVersion = 1; self.requestID = requestID; self.title = title; self.sourceApp = sourceApp; self.sourceURL = sourceURL; self.note = note; self.categoryID = categoryID; self.createdAt = createdAt; self.relatedURL = relatedURL
     }
 }
 
@@ -65,6 +68,12 @@ public enum CheckerError: LocalizedError {
 }
 
 public enum SourceLink {
+    /// Related links are web pages only.
+    public static func validatedWeb(_ raw: String?) throws -> String? {
+        guard let link = try validated(raw) else { return nil }
+        guard let scheme = URL(string: link)?.scheme?.lowercased(), scheme == "http" || scheme == "https" else { throw CheckerError.invalid("관련 링크는 웹페이지 주소만 쓸 수 있어요.") }
+        return link
+    }
     public static func validated(_ raw: String?) throws -> String? {
         guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
         guard raw.utf8.count <= 8192, let url = URL(string: raw), let scheme = url.scheme?.lowercased() else { throw CheckerError.invalid("원문 링크를 확인해 주세요.") }
@@ -73,7 +82,12 @@ public enum SourceLink {
             guard let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else { throw CheckerError.invalid("웹페이지의 전체 주소를 입력해 주세요.") }
         case "codex":
             guard url.host == "threads", url.path.count > 1, url.path != "/new" else { throw CheckerError.invalid("Codex의 해당 대화 링크를 입력해 주세요.") }
-        default: throw CheckerError.invalid("https, http 또는 Codex 대화 링크를 사용할 수 있어요.")
+        case "claude":
+            // Only the link Claude desktop uses to reopen one Claude Code session.
+            guard raw.range(of: #"^claude://code/continue\?session=local_[A-Za-z0-9-]{1,64}$"#, options: .regularExpression) != nil else {
+                throw CheckerError.invalid("Claude Code 세션 링크를 확인해 주세요.")
+            }
+        default: throw CheckerError.invalid("https, http, Codex 대화 또는 Claude Code 세션 링크를 사용할 수 있어요.")
         }
         return raw
     }

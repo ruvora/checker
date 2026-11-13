@@ -44,7 +44,9 @@ Claude 데스크톱은 실행 중에 이 파일을 다시 저장하면서 새로
 
 연결 설정에서 **Claude Code**를 선택하면 같은 MCP 서버를 Claude Code의 사용자 범위(`~/.claude.json`의 `mcpServers.checker`)에 등록합니다. 모든 프로젝트에서 `list_categories`, `add_checklist_item` 도구를 쓸 수 있으며 등록 후 **새로 시작한 세션**부터 적용됩니다. 다른 설정과 프로젝트별 MCP는 그대로 두고, 최초 변경 전 `~/.claude.json.checker-backup`을 남깁니다. 같은 이름의 다른 `checker` 연결이 있으면 덮어쓰지 않습니다. 소스에서는 `python3 scripts/setup_integrations.py --install --claude-code`로 등록합니다.
 
-Claude Code 세션은 열 수 있는 대화 링크가 없어 원문 링크를 만들지 않습니다. 대신 실제 세션 ID가 `CLAUDE_CODE_SESSION_ID`로 제공되면 메모 끝에 `claude --resume <세션 ID>`를 남깁니다.
+Claude 데스크톱에서 실행한 Claude Code 세션은 `claude://code/continue?session=local_<ID>` 링크를 원문 링크로 저장해, 제목을 누르면 그 세션으로 돌아갑니다. 세션 ID(`CLAUDE_CODE_HOST_SESSION_ID`)는 Claude가 전달하거나, Claude Code가 띄운 연결에서는 자동으로 채웁니다. 이 링크가 없는 터미널 세션은 실제 세션 ID가 `CLAUDE_CODE_SESSION_ID`로 제공되면 메모 끝에 `claude --resume <세션 ID>`를 남깁니다.
+
+Jira·PR·문서처럼 작업 대상이 되는 웹페이지는 `relatedURL`로 원문 링크와 따로 저장하고, 항목 아래 🔗 링크로 엽니다. Codex·Claude가 웹페이지를 원문 링크로 넘겨도 실제 대화 링크를 알 수 있으면 대화 링크를 원문으로 쓰고 웹페이지는 관련 링크로 옮깁니다.
 
 ### Chrome
 

@@ -50,9 +50,10 @@ public final class ChecklistRepository {
         let title = request.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, title.count <= 300 else { throw CheckerError.invalid("할 일을 300자 이내로 적어 주세요.") }
         let link = try SourceLink.validated(request.sourceURL)
+        let related = try SourceLink.validatedWeb(request.relatedURL)
         guard (request.note ?? "").count <= 8000 else { throw CheckerError.invalid("메모가 너무 길어요. 8,000자 이내로 줄여 주세요.") }
         let category = document.categories.contains(where: { $0.id == request.categoryID }) ? request.categoryID! : "uncategorized"
-        let item = ChecklistItem(id: id, title: title, sourceApp: request.sourceApp, sourceURL: link, note: request.note ?? "", categoryID: category, createdAt: request.createdAt ?? now, updatedAt: now, orderDate: now, archivedAt: nil)
+        let item = ChecklistItem(id: id, title: title, sourceApp: request.sourceApp, sourceURL: link, note: request.note ?? "", categoryID: category, createdAt: request.createdAt ?? now, updatedAt: now, orderDate: now, archivedAt: nil, relatedURL: related == link ? nil : related)
         try commit { $0.items.append(item) }
         return item
     }

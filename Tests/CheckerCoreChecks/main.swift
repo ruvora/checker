@@ -94,9 +94,20 @@ do {
         _ = try repo.drainInbox()
         try expect(repo.document.items.count == 1 && !FileManager.default.fileExists(atPath: file.path), "replayed request restored a deleted item")
     }
+    try check("a Claude Code session link is kept as the original link") { directory in
+        let repo = try ChecklistRepository(directory: directory)
+        let link = "claude://code/continue?session=local_7baffd25-7faf-42e1-bda1-2f90d76a37e6"
+        let item = try repo.add(CaptureRequest(title: "세션으로 돌아가기", sourceApp: .claude, sourceURL: link))
+        try expect(item.sourceURL == link, "session link not kept")
+        let both = try repo.add(CaptureRequest(title: "티켓 확인", sourceApp: .claude, sourceURL: link, relatedURL: "https://example.com/BP-1"))
+        let saved = try ChecklistRepository(directory: directory).document.items.first { $0.id == both.id }
+        try expect(saved?.sourceURL == link && saved?.relatedURL == "https://example.com/BP-1", "related link not kept separately")
+        do { _ = try repo.add(CaptureRequest(title: "잘못된 관련 링크", relatedURL: "codex://threads/abc")); throw CheckerError.invalid("non-web related link accepted") }
+        catch CheckerError.invalid(let message) where message != "non-web related link accepted" {}
+    }
     try check("invalid links cannot mutate persisted data") { directory in
         let repo = try ChecklistRepository(directory: directory)
-        for link in ["javascript:alert(1)", "codex://plugins/install/example", "file:///etc/passwd"] {
+        for link in ["javascript:alert(1)", "codex://plugins/install/example", "file:///etc/passwd", "claude://code/new", "claude://code/continue?session=last"] {
             do { _ = try repo.add(CaptureRequest(title: "잘못된 주소", sourceURL: link)); throw CheckerError.invalid("unsafe link accepted") }
             catch CheckerError.invalid(let message) where message != "unsafe link accepted" {}
         }

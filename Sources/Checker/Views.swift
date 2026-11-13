@@ -219,7 +219,15 @@ struct ChecklistView: View {
                         } label: { HStack(spacing: 3) { Text(model.categoryName(item.categoryID)); Image(systemName: "chevron.down").font(.system(size: 7)) }.font(.system(size: 10)).padding(.horizontal, 6).padding(.vertical, 3).background(Palette.soft).clipShape(RoundedRectangle(cornerRadius: 5)) }
                             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel(model.text("{title} 카테고리", ["title": item.title]))
                         HStack(spacing: 4) { Image(systemName: item.sourceApp.symbol); Text(model.text(item.sourceApp.label)) }.font(.system(size: 10)).foregroundColor(Palette.muted)
-                        if let host = item.sourceURL.flatMap({ URL(string: $0)?.host }), host != "threads" { Text(host.replacingOccurrences(of: "www.", with: "")).font(.system(size: 10)).foregroundColor(Palette.muted) }
+                        if let url = item.sourceURL.flatMap({ URL(string: $0) }), url.scheme?.hasPrefix("http") == true, let host = url.host { Text(host.replacingOccurrences(of: "www.", with: "")).font(.system(size: 10)).foregroundColor(Palette.muted) }
+                        // The title returns to the conversation; this opens the related site (ticket, PR, document).
+                        if let related = item.relatedURL, let url = URL(string: related), let host = url.host {
+                            let name = host.replacingOccurrences(of: "www.", with: "")
+                            Button { model.openRelated(item) } label: {
+                                HStack(spacing: 3) { Image(systemName: "link"); Text(name).underline(); Image(systemName: "arrow.up.right").font(.system(size: 7)) }
+                                    .font(.system(size: 10)).foregroundColor(Palette.accent)
+                            }.buttonStyle(.plain).help(related).accessibilityLabel(model.text("{host} 열기", ["host": name]))
+                        }
                     }
                     if let date = item.archivedAt { Text(date, style: .relative).font(.system(size: 10)).foregroundColor(Palette.muted) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
@@ -234,6 +242,7 @@ struct ChecklistView: View {
             .contextMenu {
                 if !item.note.isEmpty { Button(model.text("메모 보기")) { model.noteItem = item } }
                 if let link = item.sourceURL { Button(model.text("원문 링크 복사")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(link, forType: .string) } }
+                if let link = item.relatedURL { Button(model.text("관련 링크 복사")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(link, forType: .string) } }
                 if item.isArchived { Divider(); Button(model.text("완전히 삭제"), role: .destructive) { model.delete([item]) } }
             }
         }
@@ -277,7 +286,7 @@ struct AddItemView: View {
             Text(model.text("챙길 일 추가")).font(.system(size: 18, weight: .medium))
             TextField(model.text("해야 할 일을 한 줄로"), text: $title).textFieldStyle(.roundedBorder).accessibilityLabel(model.text("할 일 제목"))
             TextField(model.text("원문 링크 (선택)"), text: $link).textFieldStyle(.roundedBorder).accessibilityLabel(model.text("원문 링크"))
-                .onChange(of: link) { value in if value.hasPrefix("codex:") { source = .codex } else if URL(string: value)?.host?.contains("claude.ai") == true { source = .claude } else if value.hasPrefix("http") { source = .chrome } }
+                .onChange(of: link) { value in if value.hasPrefix("codex:") { source = .codex } else if value.hasPrefix("claude:") || URL(string: value)?.host?.contains("claude.ai") == true { source = .claude } else if value.hasPrefix("http") { source = .chrome } }
             HStack {
                 Picker(model.text("출처"), selection: $source) { ForEach(SourceApp.allCases) { Text(model.text($0.label)).tag($0) } }
                 Picker(model.text("카테고리"), selection: $category) { ForEach(model.document.categories) { Text($0.displayName(in: model.language)).tag($0.id) } }

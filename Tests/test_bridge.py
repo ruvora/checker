@@ -19,11 +19,12 @@ spec.loader.exec_module(bridge)
 class BridgeTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='checker-bridge-test-')
-        self.previous = {name: os.environ.get(name) for name in ['CHECKER_DATA_DIR', 'CHECKER_NO_LAUNCH', 'CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID']}
+        self.previous = {name: os.environ.get(name) for name in ['CHECKER_DATA_DIR', 'CHECKER_NO_LAUNCH', 'CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_HOST_SESSION_ID']}
         os.environ['CHECKER_DATA_DIR'] = self.temporary.name
         os.environ['CHECKER_NO_LAUNCH'] = '1'
         os.environ.pop('CODEX_THREAD_ID', None)
         os.environ.pop('CLAUDE_CODE_SESSION_ID', None)
+        os.environ.pop('CLAUDE_CODE_HOST_SESSION_ID', None)
 
     def tearDown(self):
         for name, value in self.previous.items():
@@ -55,6 +56,51 @@ class BridgeTests(unittest.TestCase):
         result = bridge.capture({'title': '현재 대화 검토', 'sourceApp': 'codex'}, wait=0)
         saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
         self.assertEqual(saved['sourceURL'], 'codex://threads/' + thread_id)
+
+    def test_claude_code_session_link_is_accepted_and_filled_only_when_known(self):
+        link = 'claude://code/continue?session=local_7baffd25-7faf-42e1-bda1-2f90d76a37e6'
+        result = bridge.capture({'title': '세션으로 돌아가기', 'sourceApp': 'claude', 'sourceURL': link}, wait=0)
+        saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
+        self.assertEqual(saved['sourceURL'], link)
+        for bad in ['claude://code/new', 'claude://code/continue?session=last', link + '&x=1', 'claude://claude.ai/new']:
+            with self.subTest(link=bad), self.assertRaises(ValueError):
+                bridge.capture({'title': 'bad', 'sourceApp': 'claude', 'sourceURL': bad}, wait=0)
+        os.environ['CLAUDE_CODE_HOST_SESSION_ID'] = 'local_abc-123'
+        result = bridge.capture({'title': '자동 링크', 'sourceApp': 'claude'}, wait=0)
+        saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
+        self.assertEqual(saved['sourceURL'], 'claude://code/continue?session=local_abc-123')
+        other = 'claude://code/continue?session=local_given-by-caller'
+        result = bridge.capture({'title': '명시한 세션 링크 우선', 'sourceApp': 'claude', 'sourceURL': other}, wait=0)
+        saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
+        self.assertEqual(saved['sourceURL'], other)
+        os.environ['CLAUDE_CODE_HOST_SESSION_ID'] = 'local_bad id'
+        result = bridge.capture({'title': '잘못된 ID', 'sourceApp': 'claude'}, wait=0)
+        saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
+        self.assertIsNone(saved['sourceURL'])
+
+    def test_a_web_page_given_as_source_moves_to_related_when_the_conversation_is_known(self):
+        thread_id = str(uuid.uuid4())
+        os.environ['CODEX_THREAD_ID'] = thread_id
+        result = bridge.capture({'title': '승인 확인', 'sourceApp': 'codex', 'sourceURL': 'https://github.com/o/r/pull/1'}, wait=0)
+        saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
+        self.assertEqual((saved['sourceURL'], saved['relatedURL']), ('codex://threads/' + thread_id, 'https://github.com/o/r/pull/1'))
+        os.environ['CLAUDE_CODE_HOST_SESSION_ID'] = 'local_abc-123'
+        result = bridge.capture({'title': '문서 확인', 'sourceApp': 'claude', 'sourceURL': 'https://wiki.example.com/a', 'relatedURL': 'https://jira.example.com/BP-1'}, wait=0)
+        saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
+        self.assertEqual((saved['sourceURL'], saved['relatedURL']), ('claude://code/continue?session=local_abc-123', 'https://jira.example.com/BP-1'))
+        # Chrome items are about the page itself; their page link stays the title link.
+        result = bridge.capture({'title': '페이지', 'sourceApp': 'chrome', 'sourceURL': 'https://example.com/page'}, wait=0)
+        saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
+        self.assertEqual(saved['sourceURL'], 'https://example.com/page')
+
+    def test_related_link_is_saved_separately_and_must_be_a_web_page(self):
+        link = 'claude://code/continue?session=local_abc-123'
+        result = bridge.capture({'title': '티켓 확인', 'sourceApp': 'claude', 'sourceURL': link, 'relatedURL': 'https://example.atlassian.net/browse/BP-1'}, wait=0)
+        saved = json.loads((Path(self.temporary.name) / 'inbox' / (result['requestID'] + '.json')).read_text())
+        self.assertEqual((saved['sourceURL'], saved['relatedURL']), (link, 'https://example.atlassian.net/browse/BP-1'))
+        for bad in ['codex://threads/abc', link, 'javascript:alert(1)']:
+            with self.subTest(link=bad), self.assertRaises(ValueError):
+                bridge.capture({'title': 'bad', 'sourceApp': 'claude', 'relatedURL': bad}, wait=0)
 
     def test_claude_code_session_is_kept_in_the_note_without_a_made_up_link(self):
         session = str(uuid.uuid4())
