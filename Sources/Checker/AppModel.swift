@@ -2,10 +2,12 @@ import AppKit
 import SwiftUI
 import CheckerCore
 
+enum ChecklistScope { case active, archive, review }
+
 @MainActor final class AppModel: ObservableObject {
     @Published private(set) var language: AppLanguage
     @Published var document = ChecklistDocument()
-    @Published var showArchived = false
+    @Published var scope: ChecklistScope = .active
     @Published var categoryID: String?
     @Published var isCollapsed = false
     @Published var isPinned = true
@@ -53,6 +55,7 @@ import CheckerCore
     func reloadLanguage() {
         if let value = try? languageSettings.load() { applyLanguage(value) }
     }
+    var showArchived: Bool { scope == .archive }
     var scopeItems: [ChecklistItem] { document.items.filter { $0.isArchived == showArchived } }
     var visibleItems: [ChecklistItem] {
         scopeItems.filter { categoryID == nil || $0.categoryID == categoryID }.sorted {

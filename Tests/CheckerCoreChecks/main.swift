@@ -12,6 +12,47 @@ func check(_ name: String, _ body: (URL) throws -> Void) throws {
     print("PASS \(name)")
 }
 do {
+    try check("review uses local completion dates, Monday weeks, and exclusive period ends") { directory in
+        let calendar = ReviewPeriod.calendar(timeZone: TimeZone(identifier: "America/Los_Angeles")!)
+        let iso = ISO8601DateFormatter()
+        func time(_ value: String) -> Date { iso.date(from: value)! }
+        let repo = try ChecklistRepository(directory: directory)
+        let older = try repo.add(CaptureRequest(title: "Older review", categoryID: "review"), now: time("2025-02-01T00:00:00Z"))
+        let latest = try repo.add(CaptureRequest(title: "Latest review", categoryID: "review"))
+        let monday = try repo.add(CaptureRequest(title: "Fix", categoryID: "development"))
+        let nextMonday = try repo.add(CaptureRequest(title: "Next week"))
+        _ = try repo.add(CaptureRequest(title: "Still active"))
+        let beforeClockChange = time("2025-03-09T09:30:00Z")
+        let afterClockChange = time("2025-03-10T06:59:59Z")
+        try repo.archive(older.id, now: beforeClockChange)
+        try repo.archive(latest.id, now: afterClockChange)
+        try repo.archive(monday.id, now: time("2025-03-03T08:00:00Z"))
+        try repo.archive(nextMonday.id, now: time("2025-03-10T07:00:00Z"))
+        let week = ReviewPeriod.week.range(containing: beforeClockChange, calendar: calendar)
+        try expect(week == time("2025-03-03T08:00:00Z")..<time("2025-03-10T07:00:00Z"), "week did not run from local Monday to Monday across DST")
+        let review = CompletedReview(items: repo.document.items, in: week, calendar: calendar)
+        try expect(review.days.map { $0.items.map(\.id) } == [[latest.id, older.id], [monday.id]], "week did not group and order items by completion time")
+        try expect(review.categories.first?.count == 2 && review.categories.first?.recentTitles == ["Latest review"], "summary did not use the latest title from the leading category")
+        try expect(review.countsByDay[week.upperBound] == 1, "calendar lost a completion outside the selected week")
+        let day = ReviewPeriod.day.range(containing: beforeClockChange, calendar: calendar)
+        try expect(CompletedReview(items: repo.document.items, in: day, calendar: calendar).count == 2, "one local day crossed a UTC date")
+        try repo.restore(latest.id)
+        try repo.delete([older.id])
+        let updated = CompletedReview(items: repo.document.items, in: day, calendar: calendar)
+        try expect(updated.count == 0 && updated.countsByDay[day.lowerBound] == nil, "restored or deleted items remained in review")
+    }
+    try check("review month navigation and grid use the local calendar") { _ in
+        let calendar = ReviewPeriod.calendar(timeZone: TimeZone(identifier: "Asia/Seoul")!)
+        let iso = ISO8601DateFormatter()
+        func time(_ value: String) -> Date { iso.date(from: value)! }
+        let january31 = time("2024-01-30T15:00:00Z")
+        let leapDay = ReviewPeriod.month.move(january31, by: 1, calendar: calendar)
+        try expect(leapDay == time("2024-02-28T15:00:00Z"), "month navigation skipped leap February")
+        let month = ReviewPeriod.month.range(containing: leapDay, calendar: calendar)
+        try expect(month == time("2024-01-31T15:00:00Z")..<time("2024-02-29T15:00:00Z"), "month boundaries were not local midnights")
+        let grid = ReviewPeriod.monthGrid(containing: leapDay, calendar: calendar)
+        try expect(grid.count == 42 && grid.first == time("2024-01-28T15:00:00Z") && grid.filter(month.contains).count == 29, "grid did not show the full leap month starting on Monday")
+    }
     try check("archive, restore and reload preserve the original link and category") { directory in
         let repo = try ChecklistRepository(directory: directory)
         let request = CaptureRequest(title: "검토", sourceApp: .codex, sourceURL: "codex://threads/12345678-abcd-1234-abcd-123456789012", categoryID: "review")
@@ -133,7 +174,7 @@ do {
         try expect(AppLanguage.preferred(["fr-FR", "ko-KR", "en-US"]) == .korean, "supported system preference not selected")
         try expect(AppLanguage.preferred(["de-DE"]) == .english, "unsupported system language did not fall back to English")
     }
-    print("7 core checks passed")
+    print("All core checks passed")
 } catch {
     fputs("FAIL: \(error.localizedDescription)\n", stderr)
     exit(1)
