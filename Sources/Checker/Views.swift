@@ -64,6 +64,8 @@ struct ChecklistView: View {
     @ObservedObject var model: AppModel
     @State private var confirmEmpty = false
     @State private var categoryToDelete: TaskCategory?
+    @State private var reviewPeriod: ReviewPeriod = .week
+    @State private var reviewDate = Date()
     var body: some View {
         Group {
             if model.isCollapsed { compact }
@@ -111,19 +113,24 @@ struct ChecklistView: View {
             header
             // Buttons keep their full size; when the window is narrow the row wraps onto a second line.
             FlowLayout(spacing: 6) {
-                scopeButton(model.text("할 일"), symbol: "checklist", count: model.activeCount, archived: false)
-                scopeButton(model.text("보관함"), symbol: "archivebox", count: model.archiveCount, archived: true)
+                scopeButton(model.text("할 일"), symbol: "checklist", count: model.activeCount, scope: .active)
+                scopeButton(model.text("보관함"), symbol: "archivebox", count: model.archiveCount, scope: .archive)
+                scopeButton(model.text("돌아보기"), symbol: "calendar", scope: .review)
                 appButton(name: "Codex", bundleID: "com.openai.codex")
                 appButton(name: "Claude", bundleID: "com.anthropic.claudefordesktop")
             }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 17).padding(.bottom, 12)
-            FlowLayout {
-                categoryButton(model.text("전체"), id: nil)
-                ForEach(model.document.categories) { category in categoryButton(category.displayName(in: model.language), id: category.id) }
-                Button { model.showCategoryEditor = true } label: { Image(systemName: "plus").font(.system(size: 10)).padding(6) }
-                    .buttonStyle(.plain).foregroundColor(Palette.muted).help(model.text("카테고리 추가")).accessibilityLabel(model.text("카테고리 추가"))
-            }.padding(.horizontal, 17).padding(.bottom, 13)
+            if model.scope != .review {
+                FlowLayout {
+                    categoryButton(model.text("전체"), id: nil)
+                    ForEach(model.document.categories) { category in categoryButton(category.displayName(in: model.language), id: category.id) }
+                    Button { model.showCategoryEditor = true } label: { Image(systemName: "plus").font(.system(size: 10)).padding(6) }
+                        .buttonStyle(.plain).foregroundColor(Palette.muted).help(model.text("카테고리 추가")).accessibilityLabel(model.text("카테고리 추가"))
+                }.padding(.horizontal, 17).padding(.bottom, 13)
+            }
             if let error = model.fatalError {
                 ScrollView { VStack(spacing: 16) { Image(systemName: "exclamationmark.triangle"); Text(model.text(error)).font(.system(size: 12)); Button(model.text("데이터 폴더 열기")) { NSWorkspace.shared.open(model.dataDirectory) } }.padding(20) }
+            } else if model.scope == .review {
+                ReviewView(model: model, period: $reviewPeriod, date: $reviewDate)
             } else if model.visibleItems.isEmpty { empty }
             else {
                 ScrollView {
@@ -154,13 +161,16 @@ struct ChecklistView: View {
             Button { model.onCollapse?() } label: { Image(systemName: "minus").frame(width: 30, height: 30).contentShape(Rectangle()) }.buttonStyle(.plain).foregroundColor(Palette.muted).help(model.text("접기")).accessibilityLabel(model.text("접기"))
         }.padding(.horizontal, 17).padding(.top, 15).padding(.bottom, 12)
     }
-    private func scopeButton(_ title: String, symbol: String, count: Int, archived: Bool) -> some View {
-        Button { model.showArchived = archived } label: {
-            HStack(spacing: 6) { Image(systemName: symbol); Text(title); Text("\(count)").font(.system(size: 10)).monospacedDigit() }
+    private func scopeButton(_ title: String, symbol: String, count: Int? = nil, scope: ChecklistScope) -> some View {
+        Button { model.scope = scope } label: {
+            HStack(spacing: 6) {
+                Image(systemName: symbol); Text(title)
+                if let count { Text("\(count)").font(.system(size: 10)).monospacedDigit() }
+            }
                 .font(.system(size: 12, weight: .medium)).padding(.horizontal, 10).padding(.vertical, 8)
-                .foregroundColor(model.showArchived == archived ? Palette.accent : Palette.muted)
-                .background(model.showArchived == archived ? Palette.selected : .clear).clipShape(RoundedRectangle(cornerRadius: 9))
-        }.buttonStyle(.plain).accessibilityLabel("\(title) \(count)").accessibilityAddTraits(model.showArchived == archived ? .isSelected : [])
+                .foregroundColor(model.scope == scope ? Palette.accent : Palette.muted)
+                .background(model.scope == scope ? Palette.selected : .clear).clipShape(RoundedRectangle(cornerRadius: 9))
+        }.buttonStyle(.plain).accessibilityLabel(count.map { "\(title) \($0)" } ?? title).accessibilityAddTraits(model.scope == scope ? .isSelected : [])
     }
     /// Opens a companion app. Hidden when the app is not installed.
     /// Styled like the unselected scope tabs. The installed app's own icon is shown in grayscale to match the muted text.
@@ -245,7 +255,7 @@ struct ChecklistView: View {
                         Button(model.text("완전히 삭제"), role: .destructive) { model.emptyArchive() }
                         Button(model.text("취소"), role: .cancel) {}
                     } message: { Text(model.text("삭제한 직후 ‘되돌리기’로만 복구할 수 있어요.")) }
-            } else {
+            } else if model.scope != .review {
                 Text(model.showArchived ? model.text("언제든 복구할 수 있어요") : model.text("체크하면 보관함으로")).font(.system(size: 10)).foregroundColor(Palette.muted)
             }
             Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 9)).foregroundColor(Palette.muted).help(model.text("창 모서리를 드래그해 크기를 조절하세요")).allowsHitTesting(false)
