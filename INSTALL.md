@@ -16,8 +16,8 @@ https://raw.githubusercontent.com/ruvora/checker/main/INSTALL.md
 
 ## For the assistant
 
-1. Download and read the [v0.7.0 installer](https://raw.githubusercontent.com/ruvora/checker/v0.7.0/install.sh). Save its absolute temporary path; shell variables may not persist between tool calls.
-2. Run `/bin/bash <saved-path> --yes --version 0.7.0`. It verifies the official download and copies Checker into `~/Applications`. A valid installation of the same version is left unchanged. If updating a running app, close Checker first.
+1. Download and read the [v0.7.1 installer](https://raw.githubusercontent.com/ruvora/checker/v0.7.1/install.sh). Save its absolute temporary path; shell variables may not persist between tool calls.
+2. Run `/bin/bash <saved-path> --yes --version 0.7.1`. It verifies the official download and copies Checker into `~/Applications`. A valid installation of the same version is left unchanged. If updating a running app, close Checker first.
 3. Open Checker normally. In **Settings & connections**, choose English or 한국어 and press **Install selected connections**. The app handles connector registration through this existing button.
 4. Help the user finish the Chrome extension instructions and restart Claude if selected. An installed app does not mean those steps are complete.
 
