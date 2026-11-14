@@ -28,6 +28,7 @@ struct ConnectionStatus: Identifiable {
     @Published var message: String?
     @Published var succeeded = false
     @Published var extensionFolder: String?
+    private var lastChromeActivity: Date?
     /// Set when Claude desktop must be quit first. A running Claude rewrites its config and drops a new MCP entry.
     @Published var needsClaudeQuit = false
     static let claudeBundleID = "com.anthropic.claudefordesktop"
@@ -129,11 +130,23 @@ struct ConnectionStatus: Identifiable {
             return ConnectionOutcome(succeeded: false, message: "실행 환경을 열지 못했어요. 배포용 Checker 앱을 다시 설치해 주세요.", extensionFolder: nil)
         }
     }
+
+    private func chromeActivity(in dataDirectory: URL) -> Date? {
+        let marker = dataDirectory.appendingPathComponent("chrome-last-seen")
+        return (try? marker.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+
+    func refreshAfterChromeActivity(dataDirectory: URL, locale: Locale) {
+        guard !isBusy, chromeActivity(in: dataDirectory) != lastChromeActivity else { return }
+        refreshStatus(dataDirectory: dataDirectory, locale: locale)
+    }
+
     /// Reads what is actually installed on disk, not only what the last install reported.
     func refreshStatus(dataDirectory: URL, locale: Locale) {
         let files = FileManager.default
         let home = files.homeDirectoryForCurrentUser
         let runtime = Self.runtime
+        lastChromeActivity = chromeActivity(in: dataDirectory)
         func json(_ url: URL) -> [String: Any]? {
             (try? Data(contentsOf: url)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         }
@@ -155,7 +168,7 @@ struct ConnectionStatus: Identifiable {
             let launcher = runtime.appendingPathComponent("native-host").path
             if json(host)?["path"] as? String != launcher || !files.isExecutableFile(atPath: launcher) {
                 chrome = ConnectionStatus(id: "chrome", name: chrome.name, state: .attention, detail: "다른 Chrome 연결이 있어 그대로 두었어요.")
-            } else if let seen = (try? files.attributesOfItem(atPath: dataDirectory.appendingPathComponent("chrome-last-seen").path))?[.modificationDate] as? Date {
+            } else if let seen = lastChromeActivity {
                 let formatter = RelativeDateTimeFormatter(); formatter.locale = locale
                 chrome = ConnectionStatus(id: "chrome", name: chrome.name, state: .connected, detail: "확장이 연결됐어요. 마지막 사용: {time}",
                     parameters: ["time": formatter.localizedString(for: min(seen, Date()), relativeTo: Date())])
@@ -202,94 +215,147 @@ struct ConnectionStatus: Identifiable {
 struct ConnectionsView: View {
     @ObservedObject var model: AppModel
     @StateObject private var setup = ConnectionSetup()
+    @State private var showsHelp = false
     @Environment(\.dismiss) private var dismiss
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
-                Image(systemName: "checklist").font(.system(size: 25)).foregroundColor(Palette.accent)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(model.text("Checker 연결 설정")).font(.system(size: 21, weight: .semibold))
-                    Text(model.text("나중에 챙길 일을 한곳으로 모으세요.")).font(.system(size: 12)).foregroundColor(Palette.muted)
-                }
-            }
-            Picker(model.text("언어"), selection: Binding(get: { model.language }, set: { model.setLanguage($0) })) {
-                ForEach(AppLanguage.allCases) { language in Text(language.label).tag(language) }
-            }.disabled(setup.isBusy)
-            Text(model.text("앱·확장·AI 결과에 적용됩니다.")).font(.system(size: 11)).foregroundColor(Palette.muted)
+        VStack(alignment: .leading, spacing: 0) {
+            Label(model.text("Checker 연결 설정"), systemImage: "checklist")
+                .font(.system(size: 15, weight: .semibold))
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(DragArea())
             Divider()
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(model.text("연결 상태")).font(.system(size: 13, weight: .semibold))
-                    Spacer()
-                    Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
-                        .buttonStyle(.plain).foregroundColor(Palette.muted)
-                        .help(model.text("상태 새로고침")).accessibilityLabel(model.text("상태 새로고침"))
-                }
-                ForEach(setup.statuses) { status in
-                    HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: icon(status.state)).foregroundColor(color(status.state)).frame(width: 16)
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text(model.text(status.name)).font(.system(size: 12, weight: .medium))
-                                Text(model.text(label(status.state))).font(.system(size: 11)).foregroundColor(color(status.state))
-                            }
-                            if !status.detail.isEmpty {
-                                Text(model.text(status.detail, status.parameters)).font(.system(size: 11)).foregroundColor(Palette.muted)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker(model.text("언어"), selection: Binding(get: { model.language }, set: { model.setLanguage($0) })) {
+                        ForEach(AppLanguage.allCases) { language in Text(language.label).tag(language) }
                     }
+                    .controlSize(.small)
+                    .disabled(setup.isBusy)
+                    .help(model.text("앱·확장·AI 결과에 적용됩니다."))
+
+                    connectionList
+                    installFeedback
+                    connectionHelp
                 }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(height: 270)
             Divider()
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle(model.text("Codex · 후속 작업을 추가하는 스킬"), isOn: $setup.codex)
-                Toggle(model.text("Chrome · 현재 화면을 AI로 정리해 추가"), isOn: $setup.chrome)
-                Toggle(model.text("Claude 데스크톱 · Checker 도구 연결"), isOn: $setup.claude)
-                Toggle(model.text("Claude Code · 모든 프로젝트에 Checker 도구 연결"), isOn: $setup.claudeCode)
-            }.toggleStyle(.checkbox).disabled(setup.isBusy)
-            Text(model.text("Chrome AI 분석은 로그인된 Codex 앱을 사용합니다. 화면 이미지와 페이지 내용을 보내 제목·메모·카테고리를 정리합니다."))
-                .font(.system(size: 12)).foregroundColor(Palette.muted).fixedSize(horizontal: false, vertical: true)
-            if !ConnectionSetup.isDistribution {
-                Text(model.text("이 화면의 자동 설치는 배포용 앱에서 사용할 수 있어요. 개발 환경에서는 설치 스크립트를 실행해 주세요."))
-                    .font(.system(size: 12)).foregroundColor(Palette.muted)
-            }
-            HStack {
-                Button(model.text(setup.isBusy ? "설치 중…" : "선택한 연결 설치")) { setup.install(language: model.language.rawValue) }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(setup.isBusy || !ConnectionSetup.isDistribution || !(setup.codex || setup.chrome || setup.claude || setup.claudeCode))
-                if setup.isBusy { ProgressView().controlSize(.small) }
-            }
-            if setup.needsClaudeQuit {
-                HStack {
-                    Button(model.text("Claude 종료 후 설치")) { setup.quitClaudeAndInstall(language: model.language.rawValue) }
-                    Text(model.text("설치가 끝나면 Claude를 다시 열어요. Claude에서 진행 중인 작업은 먼저 저장해 주세요."))
-                        .font(.system(size: 11)).foregroundColor(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            if let message = setup.message {
-                Text(model.text(message)).font(.system(size: 12)).foregroundColor(setup.succeeded ? Palette.accent : .red)
-                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-            }
-            if setup.extensionFolder != nil {
-                Divider()
-                Text(model.text("Chrome 확장 추가")).font(.system(size: 13, weight: .semibold))
-                Text(model.text("Chrome에서 chrome://extensions 를 열고, 개발자 모드 → ‘압축해제된 확장 프로그램을 로드합니다’를 선택하세요. 아래 폴더를 선택하면 됩니다. 이미 설치했다면 기존 Checker 확장을 새로고침하세요."))
-                    .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                HStack {
-                    Button(model.text("확장 폴더 열기")) { setup.revealExtension() }
-                    Button(model.text("폴더 경로 복사")) { setup.copyExtensionPath() }
-                }
-                Text(model.text("Claude는 다시 시작한 뒤 checker 도구를 켜 주세요. Codex 스킬은 새 대화에서 사용할 수 있어요."))
-                    .font(.system(size: 11)).foregroundColor(Palette.muted).fixedSize(horizontal: false, vertical: true)
-            }
-            HStack { Spacer(); Button(model.text("닫기")) { dismiss() }.keyboardShortcut(.cancelAction).disabled(setup.isBusy) }
-        }.padding(26).frame(width: 460).background(DragArea()).background(Palette.background).tint(Palette.accent)
+            footer
+        }
+        .frame(width: 360)
+        .background(Palette.background)
+        .tint(Palette.accent)
         .onAppear { refresh() }
         .onChange(of: setup.isBusy) { busy in if !busy { refresh() } }
         .onChange(of: model.language) { _ in refresh() }
+        // Checker can stay open over Chrome without gaining focus when the extension writes its marker.
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            setup.refreshAfterChromeActivity(dataDirectory: model.dataDirectory, locale: model.language.locale)
+        }
         // Coming back from Chrome or Claude should show the new state without pressing refresh.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh() }
+    }
+
+    private var connectionList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(model.text("설치할 연결")).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Button { refresh() } label: {
+                    Image(systemName: "arrow.clockwise").frame(width: 22, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundColor(Palette.muted)
+                .help(model.text("상태 새로고침")).accessibilityLabel(model.text("상태 새로고침"))
+            }
+            ForEach(setup.statuses) { status in
+                if let selection = selection(for: status.id) {
+                    HStack(spacing: 6) {
+                        Toggle(model.text(status.name), isOn: selection)
+                            .toggleStyle(.checkbox).disabled(setup.isBusy)
+                        Spacer()
+                        Label(model.text(label(status.state)), systemImage: icon(status.state))
+                            .font(.system(size: 11)).foregroundColor(color(status.state))
+                    }
+                    .help(model.text(status.detail, status.parameters))
+                }
+            }
+        }
+    }
+
+    private func selection(for id: String) -> Binding<Bool>? {
+        switch id {
+        case "codex": return $setup.codex
+        case "chrome": return $setup.chrome
+        case "claude": return $setup.claude
+        case "claudeCode": return $setup.claudeCode
+        default: return nil
+        }
+    }
+
+    private var requiresClaudeQuit: Bool { setup.needsClaudeQuit && setup.claude }
+
+    @ViewBuilder private var installFeedback: some View {
+        if requiresClaudeQuit {
+            Text(model.text("진행 중인 작업을 저장한 뒤 설치하세요. 설치가 끝나면 Claude를 다시 열어요."))
+                .font(.system(size: 11)).foregroundColor(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let message = setup.message, !setup.needsClaudeQuit || setup.claude {
+            Text(model.text(message)).font(.system(size: 11))
+                .foregroundColor(setup.isBusy ? Palette.muted : setup.succeeded ? Palette.accent : .red)
+                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+        }
+        if !ConnectionSetup.isDistribution {
+            Text(model.text("이 화면의 자동 설치는 배포용 앱에서 사용할 수 있어요. 개발 환경에서는 설치 스크립트를 실행해 주세요."))
+                .font(.system(size: 11)).foregroundColor(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var connectionHelp: some View {
+        DisclosureGroup(model.text("연결 및 Chrome 설치 안내"), isExpanded: $showsHelp) {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(setup.statuses.filter { !$0.detail.isEmpty }) { status in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(model.text(status.name)).fontWeight(.semibold)
+                        Text(model.text(status.detail, status.parameters))
+                    }
+                }
+                Text(model.text("Chrome AI 분석은 로그인된 Codex 앱을 사용합니다. 화면 이미지와 페이지 내용을 보내 제목·메모·카테고리를 정리합니다."))
+                if setup.extensionFolder != nil {
+                    Text(model.text("Chrome에서 chrome://extensions 를 열고, 개발자 모드 → ‘압축해제된 확장 프로그램을 로드합니다’를 선택하세요. 아래 폴더를 선택하면 됩니다. 이미 설치했다면 기존 Checker 확장을 새로고침하세요."))
+                        .textSelection(.enabled)
+                    HStack {
+                        Button(model.text("확장 폴더 열기")) { setup.revealExtension() }
+                        Button(model.text("폴더 경로 복사")) { setup.copyExtensionPath() }
+                    }.controlSize(.small)
+                    Text(model.text("Claude는 다시 시작한 뒤 checker 도구를 켜 주세요. Codex 스킬은 새 대화에서 사용할 수 있어요."))
+                }
+            }
+            .font(.system(size: 11)).foregroundColor(Palette.muted)
+            .fixedSize(horizontal: false, vertical: true).padding(.top, 8)
+        }
+        .font(.system(size: 12))
+    }
+
+    private var footer: some View {
+        HStack {
+            Button(model.text("닫기")) { dismiss() }
+                .keyboardShortcut(.cancelAction).disabled(setup.isBusy)
+            Spacer()
+            if setup.isBusy { ProgressView().controlSize(.small) }
+            Button(model.text(setup.isBusy ? "설치 중…" : requiresClaudeQuit ? "Claude 종료 후 설치" : "선택한 연결 설치")) {
+                if requiresClaudeQuit { setup.quitClaudeAndInstall(language: model.language.rawValue) }
+                else { setup.install(language: model.language.rawValue) }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(setup.isBusy || !ConnectionSetup.isDistribution || !(setup.codex || setup.chrome || setup.claude || setup.claudeCode))
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
     }
     private func refresh() { setup.refreshStatus(dataDirectory: model.dataDirectory, locale: model.language.locale) }
     private func icon(_ state: ConnectionState) -> String {
