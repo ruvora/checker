@@ -101,15 +101,56 @@ struct ChecklistView: View {
         } message: { Text(model.text(model.errorMessage ?? "")) }
     }
     private var compact: some View {
-        HStack(spacing: 10) {
+        let counts = model.activeCountsByColor
+        let colors = CategoryColor.allCases.filter { counts[$0] != nil }
+        return HStack(spacing: 8) {
             Image(systemName: "checklist").foregroundColor(Palette.accent).font(.system(size: 20))
-            VStack(alignment: .leading, spacing: 2) { Text("Checker").font(.system(size: 12, weight: .medium)); Text(model.text("챙길 일")).font(.system(size: 10)).foregroundColor(Palette.muted) }
-            Spacer(minLength: 0)
-            Text("\(model.activeCount)").font(.system(size: 12, weight: .medium)).padding(6).background(Palette.selected).clipShape(RoundedRectangle(cornerRadius: 7))
+                .accessibilityHidden(true)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Checker").font(.system(size: 12, weight: .medium))
+                        Text(model.text("챙길 일")).font(.system(size: 10)).foregroundColor(Palette.muted)
+                    }
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                    compactCounts(colors, counts: counts).fixedSize()
+                }
+                compactCounts(colors, counts: counts)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
             Button { model.onCollapse?() } label: {
                 Image(systemName: "chevron.up").frame(width: 30, height: 30).contentShape(Rectangle())
             }.buttonStyle(.plain).help(model.text("체크리스트 펼치기")).accessibilityLabel(model.text("체크리스트 펼치기"))
         }.padding(.horizontal, 16).background(DragArea())
+    }
+
+    private func compactCounts(_ colors: [CategoryColor], counts: [CategoryColor: Int]) -> some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            compactCountRow(colors.prefix(4), counts: counts)
+            if colors.count > 4 {
+                compactCountRow(colors.dropFirst(4), counts: counts)
+            }
+        }
+    }
+
+    private func compactCountRow(_ colors: ArraySlice<CategoryColor>, counts: [CategoryColor: Int]) -> some View {
+        HStack(spacing: 4) {
+            ForEach(colors) { color in
+                if let count = counts[color] {
+                    let description = model.text(color.label) + " · " + model.text("챙길 일") + " " + count.formatted()
+                    Text(count.formatted())
+                        .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                        .lineLimit(1).minimumScaleFactor(0.65)
+                        .foregroundColor(color.tint)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 20, minHeight: 22)
+                        .background(color.tint.opacity(0.18), in: RoundedRectangle(cornerRadius: 6))
+                        .help(description)
+                        .accessibilityLabel(description)
+                }
+            }
+        }
     }
     private var full: some View {
         VStack(spacing: 0) {
@@ -118,7 +159,7 @@ struct ChecklistView: View {
             FlowLayout(spacing: 6) {
                 scopeButton(model.text("할 일"), symbol: "checklist", count: model.activeCount, scope: .active)
                 scopeButton(model.text("보관함"), symbol: "archivebox", count: model.archiveCount, scope: .archive)
-                scopeButton(model.text("돌아보기"), symbol: "calendar", scope: .review)
+                scopeButton(model.text("캘린더"), symbol: "calendar", scope: .review)
                 appButton(name: "Codex", bundleID: "com.openai.codex")
                 appButton(name: "Claude", bundleID: "com.anthropic.claudefordesktop")
             }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 17).padding(.bottom, 12)
