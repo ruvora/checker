@@ -64,6 +64,14 @@ enum ChecklistScope { case active, archive, review }
         }
     }
     var activeCount: Int { document.items.filter { !$0.isArchived }.count }
+    var activeCountsByColor: [CategoryColor: Int] {
+        let colors = Dictionary(document.categories.map { ($0.id, $0.displayColor) }, uniquingKeysWith: { first, _ in first })
+        var counts: [CategoryColor: Int] = [:]
+        for item in document.items where !item.isArchived {
+            counts[colors[item.categoryID] ?? .gray, default: 0] += 1
+        }
+        return counts
+    }
     var archiveCount: Int { document.items.filter(\.isArchived).count }
     func categoryName(_ id: String) -> String { category(id)?.displayName(in: language) ?? text("미분류") }
     func categoryColor(_ id: String) -> CategoryColor { category(id)?.displayColor ?? .gray }

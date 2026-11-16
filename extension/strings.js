@@ -16,7 +16,7 @@ const CHECKER_STRINGS = {
   "체크리스트 펼치기": "Expand checklist",
   "할 일": "To do",
   "보관함": "Archive",
-  "돌아보기": "Activity",
+  "캘린더": "Calendar",
   "일": "Day",
   "주": "Week",
   "월": "Month",
